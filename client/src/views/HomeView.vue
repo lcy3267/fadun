@@ -7,7 +7,7 @@
         <div class="logo-seal"><span>盾</span></div>
         <span class="logo-txt">法盾</span>
       </div>
-      <div style="display:flex;gap:10px">
+      <div v-if="!auth.isLoggedIn" style="display:flex;gap:10px">
         <button class="hb-ghost" style="padding:9px 20px;font-size:13px" @click="showLogin=true">登录</button>
         <button class="hb-main"  style="padding:9px 20px;font-size:13px" @click="showRegister=true">免费注册</button>
       </div>
@@ -20,7 +20,7 @@
         <div class="hero-h">让<em>每个人</em><br>都敢于维权</div>
         <div class="hero-sub">AI 法律援助 · 证据智能分析 · 维权文书一键生成</div>
         <div class="hero-btns">
-          <button class="hb-main" @click="showRegister=true">立即开始维权</button>
+          <button class="hb-main" @click="handleStart">立即开始维权</button>
           <button class="hb-ghost" @click="scrollTo('sec-cases')">查看示范案例</button>
         </div>
         <div class="stats">
@@ -111,14 +111,27 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth.js'
 import LoginModal    from '@/components/auth/LoginModal.vue'
 import RegisterModal from '@/components/auth/RegisterModal.vue'
+
+const router = useRouter()
+const auth   = useAuthStore()
 
 const showLogin    = ref(false)
 const showRegister = ref(false)
 
 function scrollTo(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+}
+
+function handleStart() {
+  if (auth.isLoggedIn) {
+    router.push('/app')
+  } else {
+    showRegister.value = true
+  }
 }
 </script>
 

@@ -122,6 +122,7 @@
 import { ref, computed } from 'vue'
 import { useCasesStore } from '@/stores/cases.js'
 import { useToast } from '@/composables/useToast.js'
+import { deleteEvidence } from '@/api/evidence.js'
 import BaseModal     from '@/components/ui/BaseModal.vue'
 import CaseAnalysis  from '@/components/analysis/CaseAnalysis.vue'
 import EvidenceGuide from '@/components/evidence/EvidenceGuide.vue'
@@ -151,9 +152,14 @@ function onUploaded(evs) {
   store.activeCase.evidence.push(...evs)
   toast(`✅ 分析完成，${evs.filter(e=>e.status==='valid').length} 份有效证据`)
 }
-function onEvDeleted(id) {
-  store.activeCase.evidence = store.activeCase.evidence.filter(e => e.id !== id)
-  toast('证据已删除')
+async function onEvDeleted(id) {
+  try {
+    await deleteEvidence(id)
+    store.activeCase.evidence = store.activeCase.evidence.filter(e => e.id !== id)
+    toast('证据已删除')
+  } catch (e) {
+    toast('删除失败：' + (e?.response?.data?.error || e.message || '未知错误'))
+  }
 }
 
 async function handleGenDoc() {
