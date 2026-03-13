@@ -10,7 +10,7 @@ function getClient() {
   return _client
 }
 
-const MODELS = {
+export const MODELS = {
   default: 'claude-sonnet-4-20250514',
   fast:    'claude-haiku-4-5-20251001',
 }

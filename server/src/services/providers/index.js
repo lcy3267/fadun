@@ -9,6 +9,8 @@
 
 import * as anthropicProvider from './anthropic.js'
 import * as openaiProvider    from './openai.js'
+import { getConfig as getOpenAIConfig } from './openai.js'
+import { logAiEvent } from '../logger.js'
 
 const PROVIDERS = {
   anthropic: anthropicProvider,
@@ -16,11 +18,27 @@ const PROVIDERS = {
   deepseek:  openaiProvider,   // DeepSeek 复用 OpenAI 兼容层
 }
 
+function getProviderName() {
+  return (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
+}
+
 function getProvider() {
-  const name = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
+  const name = getProviderName()
   const p = PROVIDERS[name]
   if (!p) throw new Error(`未知的 LLM_PROVIDER: "${name}"，可选值：anthropic / openai / deepseek`)
   return p
+}
+
+function resolveMetaForChat(providerName) {
+  if (providerName === 'anthropic') {
+    const model = anthropicProvider.MODELS?.default
+    const endpoint = 'anthropic.messages.create'
+    return { model, endpoint }
+  }
+
+  const { baseUrl, model } = getOpenAIConfig()
+  const endpoint = `${baseUrl}/chat/completions`
+  return { model, endpoint }
 }
 
 /**
@@ -29,10 +47,41 @@ function getProvider() {
  * @param {Object} opts  - { maxTokens }
  */
 export async function llmChat(prompt, opts = {}) {
+  const providerName = getProviderName()
   const p = getProvider()
   const messages = [{ role: 'user', content: prompt }]
-  const raw = await p.chat(messages, opts)
-  return raw.replace(/```json|```/g, '').trim()
+  const meta = resolveMetaForChat(providerName)
+
+  try {
+    await logAiEvent({
+      provider: providerName,
+      model: meta.model,
+      endpoint: meta.endpoint,
+      direction: 'request',
+      payload: { messages, opts },
+    })
+
+    const raw = await p.chat(messages, opts)
+
+    await logAiEvent({
+      provider: providerName,
+      model: meta.model,
+      endpoint: meta.endpoint,
+      direction: 'response',
+      payload: { text: raw },
+    })
+
+    return raw.replace(/```json|```/g, '').trim()
+  } catch (err) {
+    await logAiEvent({
+      provider: providerName,
+      model: meta.model,
+      endpoint: meta.endpoint,
+      direction: 'error',
+      payload: { message: err?.message || String(err) },
+    })
+    throw err
+  }
 }
 
 /**
@@ -42,6 +91,7 @@ export async function llmChat(prompt, opts = {}) {
  * @param {Object} opts
  */
 export async function llmVision(images, prompt, opts = {}) {
+  const providerName = getProviderName()
   const p = getProvider()
   if (!p.supportsVision) throw new Error(`当前 provider 不支持图片分析`)
 
@@ -50,6 +100,41 @@ export async function llmVision(images, prompt, opts = {}) {
     role: 'user',
     content: [...imageBlocks, { type: 'text', text: prompt }],
   }]
-  const raw = await p.chat(messages, opts)
-  return raw.replace(/```json|```/g, '').trim()
+
+  const meta = resolveMetaForChat(providerName)
+
+  try {
+    await logAiEvent({
+      provider: providerName,
+      model: meta.model,
+      endpoint: meta.endpoint,
+      direction: 'request',
+      payload: {
+        imagesCount: images.length,
+        prompt,
+        opts,
+      },
+    })
+
+    const raw = await p.chat(messages, opts)
+
+    await logAiEvent({
+      provider: providerName,
+      model: meta.model,
+      endpoint: meta.endpoint,
+      direction: 'response',
+      payload: { text: raw },
+    })
+
+    return raw.replace(/```json|```/g, '').trim()
+  } catch (err) {
+    await logAiEvent({
+      provider: providerName,
+      model: meta.model,
+      endpoint: meta.endpoint,
+      direction: 'error',
+      payload: { message: err?.message || String(err) },
+    })
+    throw err
+  }
 }

@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 server/uploads/*
+server/src/logs/*
 !server/uploads/.gitkeep
 server/prisma/*.db
 server/prisma/*.db-journal

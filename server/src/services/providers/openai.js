@@ -11,7 +11,7 @@
 
 const DEFAULT_BASE = 'https://api.openai.com/v1'
 
-function getConfig() {
+export function getConfig() {
   return {
     apiKey:  process.env.OPENAI_API_KEY,
     baseUrl: process.env.OPENAI_BASE_URL || DEFAULT_BASE,
