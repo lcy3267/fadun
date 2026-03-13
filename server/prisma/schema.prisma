@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  phone     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  cases     Case[]
+}
+
+model Case {
+  id          Int        @id @default(autoincrement())
+  userId      Int
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isDemo      Boolean    @default(false)
+  type        String
+  goal        String
+  desc        String
+  status      String     @default("active") // active | done
+  groups      String     @default("[]")     // JSON array of group names
+  guide       String     @default("[]")     // JSON array of guide objects
+  analysis    String?                        // JSON object
+  doc         String?                        // JSON object
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  plaintiff   Plaintiff?
+  defendant   Defendant?
+  evidence    Evidence[]
+}
+
+model Plaintiff {
+  id      Int    @id @default(autoincrement())
+  caseId  Int    @unique
+  case    Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  name    String
+  gender  String @default("male")
+  age     Int
+  region  String
+}
+
+model Defendant {
+  id      Int    @id @default(autoincrement())
+  caseId  Int    @unique
+  case    Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  name    String
+  gender  String @default("male")
+  idNo    String @default("")
+  huji    String @default("")
+  rel     String
+}
+
+model Evidence {
+  id        Int      @id @default(autoincrement())
+  caseId    Int
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  filename  String
+  filepath  String   // server path relative to uploads/
+  mimetype  String
+  status    String   @default("valid") // valid | invalid
+  evType    String   @default("")
+  group     String?
+  verdict   String   @default("")
+  isDemo    Boolean  @default(false)   // placeholder evidence in demo case
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,28 @@
+:root {
+  --ink:      #0d0a06;
+  --ink2:     #231d13;
+  --ink3:     #3d3428;
+  --paper:    #f5f0e8;
+  --paper2:   #ede6d8;
+  --paper3:   #e3daca;
+  --seal:     #8b1a1a;
+  --seal2:    #6d1414;
+  --seal3:    #b02020;
+  --gold:     #9a7820;
+  --gold2:    #c49a28;
+  --gold-lt:  #f7ead0;
+  --gold-mid: #efe0b0;
+  --green:    #1a6b3a;
+  --green-lt: #e6f4ec;
+  --red:      #b91c1c;
+  --red-lt:   #fdf2f2;
+  --gray:     #6b6056;
+  --gray2:    #9e9286;
+  --gray3:    #c8bfb0;
+  --bdr:      rgba(154,120,32,.18);
+  --sh1:      0 1px 6px rgba(13,10,6,.07);
+  --sh2:      0 4px 24px rgba(13,10,6,.10);
+  --sh3:      0 12px 56px rgba(13,10,6,.15);
+  --r:        10px;
+  --rl:       16px;
+}

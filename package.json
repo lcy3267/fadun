@@ -1,0 +1,16 @@
+{
+  "name": "fadun",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n server,client -c red,blue \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
+    "build": "npm run build --workspace=client",
+    "setup": "npm install && npm run db:push --workspace=server",
+    "db:push": "npm run db:push --workspace=server",
+    "db:studio": "npm run db:studio --workspace=server"
+  },
+  "workspaces": ["server", "client"],
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

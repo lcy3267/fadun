@@ -1,0 +1,59 @@
+<template>
+  <div>
+    <div class="evs-hd">
+      <div class="evs-t">证据清单</div>
+      <div style="display:flex;gap:7px">
+        <span class="tag t-green">有效 {{ validEvidence.length }}</span>
+        <span v-if="draftEvidence.length" class="tag t-gray">草稿箱 {{ draftEvidence.length }}</span>
+      </div>
+    </div>
+
+    <!-- Grouped evidence -->
+    <div v-if="groupedEntries.length">
+      <div v-for="[group, evs] in groupedEntries" :key="group" class="evg" :class="{col: collapsed[group]}">
+        <div class="evg-h" @click="collapsed[group]=!collapsed[group]">
+          <span style="font-size:15px">📂</span>
+          <span class="evg-n">{{ group }}</span>
+          <span class="evg-c">{{ evs.length }} 份</span>
+          <span class="evg-arr">▾</span>
+        </div>
+        <div class="evg-b">
+          <EvidenceItem v-for="ev in evs" :key="ev.id" :ev="ev" @delete="$emit('deleted', ev.id)" />
+        </div>
+      </div>
+    </div>
+    <div v-else class="empty-ev">暂无已归类证据，上传截图后 AI 将自动分析并归类</div>
+
+    <!-- Draft box -->
+    <div v-if="draftEvidence.length" class="draft">
+      <div class="draft-h">📦 草稿箱 <span style="font-weight:400;font-size:12px">— AI 未能归类的证据</span></div>
+      <EvidenceItem v-for="ev in draftEvidence" :key="ev.id" :ev="ev" :is-draft="true" @delete="$emit('deleted', ev.id)" />
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, reactive } from 'vue'
+import EvidenceItem from './EvidenceItem.vue'
+
+const props = defineProps({
+  caseId:   Number,
+  evidence: { type: Array, default: () => [] },
+  groups:   { type: Array, default: () => [] },
+})
+defineEmits(['deleted'])
+
+const collapsed = reactive({})
+
+const validEvidence = computed(() => props.evidence.filter(e => e.status === 'valid'))
+const draftEvidence = computed(() => props.evidence.filter(e => e.status === 'invalid' || !e.group))
+
+const groupedEntries = computed(() => {
+  const map = new Map()
+  props.groups.forEach(g => map.set(g, []))
+  validEvidence.value.forEach(ev => {
+    if (ev.group && map.has(ev.group)) map.get(ev.group).push(ev)
+  })
+  return [...map.entries()].filter(([, evs]) => evs.length > 0)
+})
+</script>
