@@ -1,4 +1,5 @@
 import api from './client.js'
+import axios from 'axios'
 
 export const uploadEvidence = (caseId, files, onProgress) => {
   const fd = new FormData()
@@ -11,3 +12,12 @@ export const uploadEvidence = (caseId, files, onProgress) => {
 }
 
 export const deleteEvidence = (id) => api.delete(`/evidence/${id}`)
+
+export const downloadEvidenceZip = async (caseId) => {
+  const token = localStorage.getItem('fd_token')
+  const res = await axios.get(`/api/evidence/download/${caseId}`, {
+    responseType: 'blob',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  return res.data
+}

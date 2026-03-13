@@ -1,8 +1,9 @@
 import { requireAuth }     from '../middleware/auth.js'
 import { analyzeEvidence } from '../services/ai.js'
 import fmultipart          from '@fastify/multipart'
-import { mkdirSync, unlinkSync, existsSync, writeFileSync } from 'fs'
-import { join, dirname }   from 'path'
+import { mkdirSync, unlinkSync, existsSync, writeFileSync, createReadStream } from 'fs'
+import { join, dirname, basename }   from 'path'
+import archiver from 'archiver'
 import { fileURLToPath }   from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -109,5 +110,53 @@ export default async function evidenceRoutes(app) {
 
     await app.db.evidence.delete({ where: { id } })
     return { ok: true }
+  })
+
+  // ── GET /api/evidence/download/:caseId ───────────
+  // 下载指定案件的所有证据为带目录的 zip
+  app.get('/download/:caseId', async (req, reply) => {
+    const caseId = Number(req.params.caseId)
+    if (!caseId) return reply.code(400).send({ error: '缺少 caseId' })
+
+    const c = await app.db.case.findFirst({
+      where:   { id: caseId, userId: req.user.userId },
+      include: { plaintiff: true },
+    })
+    if (!c) return reply.code(404).send({ error: '案件不存在' })
+
+    const evidence = await app.db.evidence.findMany({
+      where: { caseId, isDemo: false },
+      orderBy: { id: 'asc' },
+    })
+    if (!evidence.length) return reply.code(400).send({ error: '暂无可下载的证据' })
+
+    const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9\u4e00-\u9fa5._-]/g, '_') || '案件'
+    const rootDir = `${safeName(c.plaintiff?.name)}_${safeName(c.type)}_证据`
+
+    reply.header('Content-Type', 'application/zip')
+    reply.header('Content-Disposition', `attachment; filename="${encodeURIComponent(rootDir)}.zip"`)
+
+    const archive = archiver('zip', { zlib: { level: 9 } })
+
+    archive.on('error', (err) => {
+      reply.raw.destroy(err)
+    })
+
+    archive.pipe(reply.raw)
+
+    for (const ev of evidence) {
+      if (!ev.filepath) continue
+      const fullPath = join(UPLOADS_ROOT, ev.filepath)
+      if (!existsSync(fullPath)) continue
+
+      const groupName = safeName(ev.group || ev.evType || '未归类')
+      const fileName  = basename(fullPath)
+      const entryPath = `${rootDir}/${groupName}/${fileName}`
+
+      archive.file(fullPath, { name: entryPath })
+    }
+
+    await archive.finalize()
+    return reply
   })
 }

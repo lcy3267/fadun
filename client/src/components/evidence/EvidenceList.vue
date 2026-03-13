@@ -2,9 +2,17 @@
   <div>
     <div class="evs-hd">
       <div class="evs-t">证据清单</div>
-      <div style="display:flex;gap:7px">
+      <div style="display:flex;gap:8px;align-items:center">
         <span class="tag t-green">有效 {{ validEvidence.length }}</span>
         <span v-if="draftEvidence.length" class="tag t-gray">草稿箱 {{ draftEvidence.length }}</span>
+        <button
+          v-if="canDownload"
+          class="btn btn-g btn-sm"
+          style="margin-left:6px"
+          @click="$emit('download')"
+        >
+          下载证据
+        </button>
       </div>
     </div>
 
@@ -56,8 +64,9 @@ const props = defineProps({
   caseId:   Number,
   evidence: { type: Array, default: () => [] },
   groups:   { type: Array, default: () => [] },
+  canDownload: { type: Boolean, default: false },
 })
-defineEmits(['deleted', 'preview'])
+const emit = defineEmits(['deleted', 'preview', 'download'])
 
 const collapsed = reactive({})
 

@@ -74,8 +74,10 @@
           :case-id="c.id"
           :evidence="c.evidence || []"
           :groups="c.groups || []"
+          :can-download="c.status === 'done'"
           @deleted="onEvDeleted"
           @preview="onEvPreview"
+          @download="handleDownloadEvidence"
         />
         <EvidenceUpload v-if="!c.isDemo" :case-id="c.id" :case-info="c" @uploaded="onUploaded" />
         <div v-else class="pnote" style="margin-top:12px">💡 这是演示案件，无法上传真实证据。新建案件后可上传您的截图。</div>
@@ -141,7 +143,7 @@
 import { ref, computed } from 'vue'
 import { useCasesStore } from '@/stores/cases.js'
 import { useToast } from '@/composables/useToast.js'
-import { deleteEvidence } from '@/api/evidence.js'
+import { deleteEvidence, downloadEvidenceZip } from '@/api/evidence.js'
 import BaseModal     from '@/components/ui/BaseModal.vue'
 import CaseAnalysis  from '@/components/analysis/CaseAnalysis.vue'
 import EvidenceGuide from '@/components/evidence/EvidenceGuide.vue'
@@ -188,6 +190,26 @@ async function onEvDeleted(id) {
     toast('证据已删除')
   } catch (e) {
     toast('删除失败：' + (e?.response?.data?.error || e.message || '未知错误'))
+  }
+}
+
+async function handleDownloadEvidence() {
+  if (!c.value) return
+  try {
+    const blob = await downloadEvidenceZip(c.value.id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const name = c.value.plaintiff?.name || '案件'
+    const type = c.value.type || '证据'
+    const date = new Date().toISOString().slice(0, 10)
+    a.href = url
+    a.download = `证据清单_${name}_${type}_${date}.zip`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    toast('下载失败：' + (e.message || '未知错误'))
   }
 }
 
