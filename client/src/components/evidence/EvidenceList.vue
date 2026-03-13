@@ -9,7 +9,7 @@
     </div>
 
     <!-- Grouped evidence -->
-    <div v-if="groupedEntries.length">
+    <div v-if="props.groups.length">
       <div v-for="[group, evs] in groupedEntries" :key="group" class="evg" :class="{col: collapsed[group]}">
         <div class="evg-h" @click="collapsed[group]=!collapsed[group]">
           <span style="font-size:15px">📂</span>
@@ -18,7 +18,16 @@
           <span class="evg-arr">▾</span>
         </div>
         <div class="evg-b">
-          <EvidenceItem v-for="ev in evs" :key="ev.id" :ev="ev" @delete="$emit('deleted', ev.id)" />
+          <EvidenceItem
+            v-for="ev in evs"
+            :key="ev.id"
+            :ev="ev"
+            @delete="$emit('deleted', ev.id)"
+            @preview="$emit('preview', ev)"
+          />
+          <div v-if="!evs.length" class="empty-ev" style="margin:6px 4px 10px;font-size:11.5px;color:var(--gray2);">
+            暂无该分组下的证据，上传截图后将自动归类到此处
+          </div>
         </div>
       </div>
     </div>
@@ -27,7 +36,14 @@
     <!-- Draft box -->
     <div v-if="draftEvidence.length" class="draft">
       <div class="draft-h">📦 草稿箱 <span style="font-weight:400;font-size:12px">— AI 未能归类的证据</span></div>
-      <EvidenceItem v-for="ev in draftEvidence" :key="ev.id" :ev="ev" :is-draft="true" @delete="$emit('deleted', ev.id)" />
+      <EvidenceItem
+        v-for="ev in draftEvidence"
+        :key="ev.id"
+        :ev="ev"
+        :is-draft="true"
+        @delete="$emit('deleted', ev.id)"
+        @preview="$emit('preview', ev)"
+      />
     </div>
   </div>
 </template>
@@ -41,7 +57,7 @@ const props = defineProps({
   evidence: { type: Array, default: () => [] },
   groups:   { type: Array, default: () => [] },
 })
-defineEmits(['deleted'])
+defineEmits(['deleted', 'preview'])
 
 const collapsed = reactive({})
 
@@ -54,6 +70,6 @@ const groupedEntries = computed(() => {
   validEvidence.value.forEach(ev => {
     if (ev.group && map.has(ev.group)) map.get(ev.group).push(ev)
   })
-  return [...map.entries()].filter(([, evs]) => evs.length > 0)
+  return [...map.entries()]
 })
 </script>

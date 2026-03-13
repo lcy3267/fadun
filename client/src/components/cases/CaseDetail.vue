@@ -70,7 +70,13 @@
     <div class="ev-layout">
       <EvidenceGuide :guide="c.guide" />
       <div>
-        <EvidenceList :case-id="c.id" :evidence="c.evidence || []" :groups="c.groups || []" @deleted="onEvDeleted" />
+        <EvidenceList
+          :case-id="c.id"
+          :evidence="c.evidence || []"
+          :groups="c.groups || []"
+          @deleted="onEvDeleted"
+          @preview="onEvPreview"
+        />
         <EvidenceUpload v-if="!c.isDemo" :case-id="c.id" :case-info="c" @uploaded="onUploaded" />
         <div v-else class="pnote" style="margin-top:12px">💡 这是演示案件，无法上传真实证据。新建案件后可上传您的截图。</div>
       </div>
@@ -104,6 +110,19 @@
 
     <!-- Doc Viewer -->
     <DocViewer v-model="showDoc" :doc="c.doc" :case-data="c" />
+
+    <!-- Evidence Preview -->
+    <BaseModal v-model="showPreview" title="证据预览" :lg="true">
+      <div v-if="previewEv">
+        <div style="margin-bottom:10px;font-size:13px;color:var(--gray2)">
+          {{ previewEv.filename }}
+        </div>
+        <div v-if="previewUrl" style="text-align:center">
+          <img :src="previewUrl" alt="" style="max-width:100%;max-height:70vh;border-radius:8px;box-shadow:var(--sh2)" />
+        </div>
+        <div v-else style="font-size:13px;color:var(--gray2)">暂不支持预览此类型文件</div>
+      </div>
+    </BaseModal>
 
     <!-- Delete Confirm -->
     <BaseModal v-model="showDelConfirm" title="删除案件">
@@ -141,6 +160,12 @@ const showGenConfirm = ref(false)
 const showDoc    = ref(false)
 const showDelConfirm = ref(false)
 const genLoading = ref(false)
+const showPreview = ref(false)
+const previewEv   = ref(null)
+const previewUrl  = computed(() => {
+  if (!previewEv.value || previewEv.value.isDemo || !previewEv.value.filepath) return ''
+  return `/uploads/${previewEv.value.filepath}`
+})
 
 const ICONS = { '网络侵权':'📱','劳动纠纷':'💼','消费维权':'🛍','合同纠纷':'📝','婚姻家庭':'🏠','人身损害':'🏥','其他':'📁' }
 const validCount = computed(() => (c.value?.evidence || []).filter(e => e.status === 'valid').length)
@@ -151,6 +176,10 @@ function fmtDate(d) { return d ? new Date(d).toLocaleDateString('zh-CN') : '—'
 function onUploaded(evs) {
   store.activeCase.evidence.push(...evs)
   toast(`✅ 分析完成，${evs.filter(e=>e.status==='valid').length} 份有效证据`)
+}
+function onEvPreview(ev) {
+  previewEv.value = ev
+  showPreview.value = true
 }
 async function onEvDeleted(id) {
   try {
