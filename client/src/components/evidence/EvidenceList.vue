@@ -62,13 +62,28 @@ defineEmits(['deleted', 'preview'])
 const collapsed = reactive({})
 
 const validEvidence = computed(() => props.evidence.filter(e => e.status === 'valid'))
-const draftEvidence = computed(() => props.evidence.filter(e => e.status === 'invalid' || !e.group))
+const draftEvidence = computed(() => {
+  return props.evidence.filter(e => {
+    if (e.status === 'invalid') return true
+    const hasGroupMatch  = !!(e.group && props.groups.includes(e.group))
+    const hasTypeMatch   = !!(e.evType && props.groups.includes(e.evType))
+    return !hasGroupMatch && !hasTypeMatch
+  })
+})
 
 const groupedEntries = computed(() => {
   const map = new Map()
   props.groups.forEach(g => map.set(g, []))
   validEvidence.value.forEach(ev => {
-    if (ev.group && map.has(ev.group)) map.get(ev.group).push(ev)
+    let target = null
+    if (ev.group && map.has(ev.group)) {
+      target = ev.group
+    } else if (ev.evType && map.has(ev.evType)) {
+      target = ev.evType
+    }
+    if (target) {
+      map.get(target).push(ev)
+    }
   })
   return [...map.entries()]
 })
