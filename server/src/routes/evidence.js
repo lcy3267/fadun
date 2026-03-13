@@ -13,7 +13,7 @@ export default async function evidenceRoutes(app) {
   app.addHook('preHandler', requireAuth)
 
   // ── POST /api/evidence/upload ────────────────────
-  // 一次上传一批图，并发到 Claude 分析
+  // 一次上传一批图，并发到 ai 分析
   app.post('/upload', async (req, reply) => {
     const parts = req.parts()
     let caseId, caseData

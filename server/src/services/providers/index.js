@@ -95,11 +95,29 @@ export async function llmVision(images, prompt, opts = {}) {
   const p = getProvider()
   if (!p.supportsVision) throw new Error(`当前 provider 不支持图片分析`)
 
-  const imageBlocks = images.map(img => p.imageBlock(img.mimetype, img.b64))
-  const messages = [{
-    role: 'user',
-    content: [...imageBlocks, { type: 'text', text: prompt }],
-  }]
+  let messages
+
+  if (providerName !== 'anthropic') {
+    // DeepSeek 当前 chat/completions 接口不接受 OpenAI 的 image_url 内容块，
+    // 这里退化为纯文本调用，由 prompt 自身描述图片相关信息。
+    const content = [
+      ...images.map(img => ({
+        type: 'image_url',
+        image_url: { url: `data:${img.mimetype};base64,${img.b64}` }
+      })),
+      {
+        "type": "text",
+        "text": prompt
+      }
+    ]
+    messages = [{ role: 'user', content: content }]
+  } else {
+    const imageBlocks = images.map(img => p.imageBlock(img.mimetype, img.b64))
+    messages = [{
+      role: 'user',
+      content: [...imageBlocks, { type: 'text', text: prompt }],
+    }]
+  }
 
   const meta = resolveMetaForChat(providerName)
 
