@@ -8,6 +8,7 @@ import Fastify        from 'fastify'
 import dbPlugin       from './plugins/db.js'
 import jwtPlugin      from './plugins/jwt.js'
 import staticPlugin   from './plugins/static.js'
+import spaPlugin      from './plugins/spa.js'
 import corsPlugin     from './plugins/cors.js'
 import authRoutes     from './routes/auth.js'
 import casesRoutes    from './routes/cases.js'
@@ -27,6 +28,8 @@ await app.register(evidenceRoutes, { prefix: '/api/evidence' })
 await app.register(aiRoutes,       { prefix: '/api/ai' })
 
 app.get('/api/health', async () => ({ ok: true }))
+
+await app.register(spaPlugin)
 
 try {
   const port = Number(process.env.PORT) || 3000
