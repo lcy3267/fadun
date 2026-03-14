@@ -37,7 +37,7 @@ function resolveMetaForChat(providerName) {
   }
 
   const { baseUrl, model } = getOpenAIConfig()
-  const endpoint = `${baseUrl}/chat/completions`
+  const endpoint = `${baseUrl}`
   return { model, endpoint }
 }
 

@@ -18,7 +18,7 @@
     <div v-if="uploading" class="ev-progress">
       <div class="ep-row">
         <span class="ep-txt">{{ progressText }}</span>
-        <span style="font-size:11.5px;color:var(--gray2)">上传中</span>
+        <span style="font-size:11.5px;color:var(--gray2)">{{ phaseLabel }}</span>
       </div>
       <div class="ep-bar">
         <div class="ep-fill" :style="{width: uploadPct+'%'}"></div>
@@ -29,6 +29,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import imageCompression from 'browser-image-compression'
 import { uploadEvidence } from '@/api/evidence.js'
 
 const props = defineProps({ caseId: Number, caseInfo: Object })
@@ -39,8 +40,26 @@ const isDragging = ref(false)
 const uploading  = ref(false)
 const uploadPct  = ref(0)
 const progressText = ref('正在上传…')
+const phase = ref('compress') // 'compress' | 'upload'
+const phaseLabel = computed(() => phase.value === 'compress' ? '压缩中' : '上传中')
 
 const BATCH = 8
+const MAX_SIZE_KB = 200
+const SKIP_COMPRESS_KB = 150
+
+async function compressImage(file) {
+  if (file.size <= SKIP_COMPRESS_KB * 1024) return file
+  const options = {
+    maxSizeMB: MAX_SIZE_KB / 1024,
+    maxWidthOrHeight: 1920,
+    useWebWorker: true,
+    fileType: 'image/jpeg',
+    initialQuality: 0.85,
+  }
+  const out = await imageCompression(file, options)
+  const baseName = (file.name || 'image').replace(/\.[^.]+$/, '') || 'image'
+  return new File([out], `${baseName}.jpg`, { type: 'image/jpeg' })
+}
 
 function onFiles(e) { processFiles(Array.from(e.target.files)); e.target.value = '' }
 function onDrop(e)  { isDragging.value = false; processFiles(Array.from(e.dataTransfer.files)) }
@@ -52,17 +71,28 @@ async function processFiles(files) {
   uploading.value = true
   uploadPct.value = 0
 
+  phase.value = 'compress'
+  progressText.value = `压缩中 0 / ${imgs.length} 张`
+  const compressed = []
+  for (let i = 0; i < imgs.length; i++) {
+    const out = await compressImage(imgs[i])
+    compressed.push(out)
+    uploadPct.value = Math.round(((i + 1) / imgs.length) * 50)
+    progressText.value = `压缩中 ${i + 1} / ${imgs.length} 张`
+  }
+
+  phase.value = 'upload'
   const all = []
-  for (let i = 0; i < imgs.length; i += BATCH) {
-    const batch = imgs.slice(i, i + BATCH)
-    progressText.value = `已上传 ${Math.min(i, imgs.length)} / ${imgs.length} 张`
+  for (let i = 0; i < compressed.length; i += BATCH) {
+    const batch = compressed.slice(i, i + BATCH)
+    progressText.value = `已上传 ${Math.min(i, compressed.length)} / ${compressed.length} 张`
     const results = await uploadEvidence(props.caseId, batch, (ev) => {
-      const base = (i / imgs.length) * 100
-      const chunk = (batch.length / imgs.length) * 100
+      const base = 50 + (i / compressed.length) * 50
+      const chunk = (batch.length / compressed.length) * 50
       uploadPct.value = Math.round(base + (ev.loaded / ev.total) * chunk)
     })
     all.push(...results)
-    uploadPct.value = Math.round(((i + batch.length) / imgs.length) * 100)
+    uploadPct.value = Math.round(((i + batch.length) / compressed.length) * 50 + 50)
   }
 
   uploading.value = false

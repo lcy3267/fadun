@@ -31,6 +31,14 @@
           <span v-if="verifying" class="spin pending-spin"></span>
           {{ verifying ? '认证中…' : `进行证据归类认证（已选 ${selectedIds.length}）` }}
         </button>
+        <button
+          type="button"
+          class="btn btn-danger btn-sm"
+          :disabled="!selectedIds.length || verifying"
+          @click="handleDeleteSelected"
+        >
+          删除已选
+        </button>
       </div>
     </div>
 
@@ -175,6 +183,23 @@ async function handleVerify() {
     emit('verified', updated)
   } catch (e) {
     toast('认证失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
+  } finally {
+    verifying.value = false
+  }
+}
+
+async function handleDeleteSelected() {
+  if (!selectedIds.value.length || !props.caseId) return
+  verifying.value = true
+  try {
+    for (const id of selectedIds.value) {
+      await store.deleteEvidence(props.caseId, id)
+    }
+    const n = selectedIds.value.length
+    selectedIds.value = []
+    toast(`已删除 ${n} 张待认证图片`)
+  } catch (e) {
+    toast('删除失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
   } finally {
     verifying.value = false
   }
