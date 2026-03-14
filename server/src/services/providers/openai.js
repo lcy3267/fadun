@@ -9,7 +9,7 @@
  *                      DeepSeek 填 deepseek-chat
  */
 
-const DEFAULT_BASE = 'https://api.openai.com/v1/chat/completions'
+const DEFAULT_BASE = 'https://api.openai.com/v1'
 
 export function getConfig() {
   return {
@@ -21,7 +21,7 @@ export function getConfig() {
 
 export async function chat(messages, { maxTokens = 1000 } = {}) {
   const { apiKey, baseUrl, model } = getConfig()
-  const res = await fetch(`${baseUrl}`, {
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
