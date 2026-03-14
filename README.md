@@ -84,7 +84,7 @@ fadun/
 
 ## Prompt 位置
 
-所有 Prompt 均在 `server/src/services/claude.js`，包含：
+所有 Prompt 均在 `server/src/services/ai.js`，包含：
 - `generateGroups` — 个性化证据分组
 - `generateAnalysis` — 案情分析（胜诉可能性、关键要点、风险）
 - `analyzeEvidence` — 批量图片证明力判断

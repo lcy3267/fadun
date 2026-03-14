@@ -71,7 +71,14 @@ export async function analyzeEvidence({ images, caseInfo }) {
 ${groups.join('、')}
 
 【任务】
-以上共 ${images.length} 张图片，请按顺序逐张分析，只返回 JSON 数组：
+以上共 ${images.length} 张图片，请按顺序逐张分析。
+
+分析每张图时：
+1) 先判断该图是否为聊天/对话界面截图（如微信、QQ、短信等）。
+2) 若不是聊天截图：按画面内容归入上述分类，给出 valid、evType、group、verdict即可。
+3) 若是聊天截图：根据图中聊天内容判断对本案的证明力。若内容可辨认且与案情、被告相关，则 valid 为 true，正常填写 evType、group、verdict；若无法识别有效内容（模糊、残缺、与案情无关等），则 valid 为 false，group 为 null，verdict 写：「未能识别有效聊天内容，建议滚动截图或补充更多聊天内容」（或等价表述，不超过40字）。
+
+只返回 JSON 数组，不要有其他文字：
 [{"valid":true,"evType":"证据类型简称4字以内","group":"归属分类名称或null","verdict":"对本案证明力具体说明不超过40字"}]
 
 注意：数组长度必须等于图片数量（${images.length}）；只返回 JSON。`
