@@ -177,6 +177,14 @@ function fmtDate(d) { return d ? new Date(d).toLocaleDateString('zh-CN') : '—'
 
 function onUploaded(evs) {
   store.activeCase.evidence.push(...evs)
+  // 已完结案件新上传了有效证据时，与后端一致：状态改为进行中，页面即时更新
+  const hadDone = store.activeCase.status === 'done'
+  const hasValid = evs.some(e => e.status === 'valid')
+  if (hadDone && hasValid) {
+    store.activeCase.status = 'active'
+    const idx = store.cases.findIndex(x => x.id === store.activeCase.id)
+    if (idx !== -1) store.cases[idx].status = 'active'
+  }
   toast(`✅ 分析完成，${evs.filter(e=>e.status==='valid').length} 份有效证据`)
 }
 function onEvPreview(ev) {

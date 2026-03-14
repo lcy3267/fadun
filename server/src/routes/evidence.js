@@ -85,8 +85,11 @@ export default async function evidenceRoutes(app) {
       })
     }))
 
-    // 更新案件 updatedAt
-    await app.db.case.update({ where: { id: caseId }, data: { updatedAt: new Date() } })
+    // 更新案件：若已完结且本批有有效证据，状态改为进行中
+    const hasValidNew = aiResults.some(r => r.valid)
+    const caseUpdate = { updatedAt: new Date() }
+    if (c.status === 'done' && hasValidNew) caseUpdate.status = 'active'
+    await app.db.case.update({ where: { id: caseId }, data: caseUpdate })
 
     return created
   })
