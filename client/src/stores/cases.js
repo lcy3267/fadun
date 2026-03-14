@@ -56,6 +56,30 @@ export const useCasesStore = defineStore('cases', () => {
     }
   }
 
+  async function verifyEvidence(caseId, evidenceIds) {
+    const updated = await evidenceApi.verifyEvidence(evidenceIds)
+    if (activeCase.value?.id === caseId) {
+      for (const u of updated) {
+        const idx = activeCase.value.evidence.findIndex(e => e.id === u.id)
+        if (idx !== -1) activeCase.value.evidence[idx] = u
+      }
+      if (activeCase.value.status === 'done' && updated.some(u => u.status === 'valid')) {
+        activeCase.value.status = 'active'
+      }
+    }
+    const caseIdx = cases.value.findIndex(x => x.id === caseId)
+    if (caseIdx !== -1 && cases.value[caseIdx].evidence) {
+      for (const u of updated) {
+        const idx = cases.value[caseIdx].evidence.findIndex(e => e.id === u.id)
+        if (idx !== -1) cases.value[caseIdx].evidence[idx] = u
+      }
+      if (cases.value[caseIdx].status === 'done' && updated.some(u => u.status === 'valid')) {
+        cases.value[caseIdx].status = 'active'
+      }
+    }
+    return updated
+  }
+
   async function generateDocument(caseId) {
     const res = await casesApi.aiDocument(caseId)
     if (activeCase.value?.id === caseId) {
@@ -70,6 +94,6 @@ export const useCasesStore = defineStore('cases', () => {
   return {
     cases, activeCase, loading,
     fetchCases, fetchCase, createCase, updateCase, deleteCase,
-    uploadEvidence, deleteEvidence, generateDocument,
+    uploadEvidence, deleteEvidence, verifyEvidence, generateDocument,
   }
 })

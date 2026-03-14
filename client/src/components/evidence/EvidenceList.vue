@@ -1,5 +1,39 @@
 <template>
   <div>
+    <!-- 待认证：仅缩略图 + 复选框，无文字说明；支持全选 -->
+    <div v-if="pendingEvidence.length" class="pending-section">
+      <div class="pending-hd">
+        <span class="evs-t">待认证 {{ pendingEvidence.length }} 张</span>
+        <button type="button" class="btn btn-g btn-sm" @click="toggleSelectAll">
+          {{ isAllPendingSelected ? '取消全选' : '全选' }}
+        </button>
+      </div>
+      <div class="pending-list">
+        <label
+          v-for="ev in pendingEvidence"
+          :key="ev.id"
+          class="pending-item"
+          :class="{ selected: selectedIds.includes(ev.id) }"
+        >
+          <input type="checkbox" :value="ev.id" v-model="selectedIds" @click.stop />
+          <div class="pending-thumb" @click.stop="onPendingPreview(ev)">
+            <img v-if="!ev.isDemo && ev.filepath" :src="`/uploads/${ev.filepath}`" alt="" />
+            <span v-else>🖼</span>
+          </div>
+        </label>
+      </div>
+      <div class="pending-actions">
+        <button
+          class="btn btn-p btn-sm"
+          :disabled="!selectedIds.length || verifying"
+          @click="handleVerify"
+        >
+          <span v-if="verifying" class="spin pending-spin"></span>
+          {{ verifying ? '认证中…' : `进行证据归类认证（已选 ${selectedIds.length}）` }}
+        </button>
+      </div>
+    </div>
+
     <div class="evs-hd">
       <div class="evs-t">证据清单</div>
       <div style="display:flex;gap:8px;align-items:center">
@@ -16,7 +50,7 @@
       </div>
     </div>
 
-    <!-- Grouped evidence -->
+    <!-- 已识别：按分组展示 -->
     <div v-if="props.groups.length">
       <div v-for="[group, evs] in groupedEntries" :key="group" class="evg" :class="{col: collapsed[group]}">
         <div class="evg-h" @click="collapsed[group]=!collapsed[group]">
@@ -39,7 +73,7 @@
         </div>
       </div>
     </div>
-    <div v-else class="empty-ev">暂无已归类证据，上传截图后 AI 将自动分析并归类</div>
+    <div v-else class="empty-ev">暂无已归类证据，上传后选择「待认证」图片进行证据归类认证</div>
 
     <!-- Draft box -->
     <div v-if="draftEvidence.length" class="draft">
@@ -57,8 +91,10 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import EvidenceItem from './EvidenceItem.vue'
+import { useCasesStore } from '@/stores/cases.js'
+import { useToast } from '@/composables/useToast.js'
 
 const props = defineProps({
   caseId:   Number,
@@ -66,13 +102,45 @@ const props = defineProps({
   groups:   { type: Array, default: () => [] },
   canDownload: { type: Boolean, default: false },
 })
-const emit = defineEmits(['deleted', 'preview', 'download'])
+const emit = defineEmits(['deleted', 'preview', 'download', 'verified'])
 
+const store = useCasesStore()
+const { toast } = useToast()
 const collapsed = reactive({})
+const selectedIds = ref([])
+const verifying = ref(false)
 
-const validEvidence = computed(() => props.evidence.filter(e => e.status === 'valid'))
+// 待认证：未 AI 识别的（aiVerified 为 false 或 status 为 pending）
+const pendingEvidence = computed(() =>
+  props.evidence.filter(e => !e.aiVerified || e.status === 'pending')
+)
+
+const isAllPendingSelected = computed(() => {
+  const pending = pendingEvidence.value
+  if (!pending.length) return false
+  return pending.every(e => selectedIds.value.includes(e.id))
+})
+
+function toggleSelectAll() {
+  const pending = pendingEvidence.value
+  if (isAllPendingSelected.value) {
+    selectedIds.value = []
+  } else {
+    selectedIds.value = pending.map(e => e.id)
+  }
+}
+
+function onPendingPreview(ev) {
+  if (ev.isDemo || !ev.filepath) return
+  emit('preview', ev)
+}
+
+// 已识别的证据中：有效 + 草稿（仅统计 aiVerified 的）
+const verifiedEvidence = computed(() => props.evidence.filter(e => e.aiVerified))
+
+const validEvidence = computed(() => verifiedEvidence.value.filter(e => e.status === 'valid'))
 const draftEvidence = computed(() => {
-  return props.evidence.filter(e => {
+  return verifiedEvidence.value.filter(e => {
     if (e.status === 'invalid') return true
     const hasGroupMatch  = !!(e.group && props.groups.includes(e.group))
     const hasTypeMatch   = !!(e.evType && props.groups.includes(e.evType))
@@ -96,4 +164,19 @@ const groupedEntries = computed(() => {
   })
   return [...map.entries()]
 })
+
+async function handleVerify() {
+  if (!selectedIds.value.length || !props.caseId) return
+  verifying.value = true
+  try {
+    const updated = await store.verifyEvidence(props.caseId, selectedIds.value)
+    selectedIds.value = []
+    toast(`✅ 已认证 ${updated.length} 份证据，${updated.filter(e => e.status === 'valid').length} 份有效`)
+    emit('verified', updated)
+  } catch (e) {
+    toast('认证失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
+  } finally {
+    verifying.value = false
+  }
+}
 </script>

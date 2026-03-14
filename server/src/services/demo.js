@@ -75,6 +75,7 @@ export async function createDemoCase(db, userId) {
             evType:   '视频截图',
             group:    '侵权视频证据',
             verdict:  '抖音侵权视频截图，含账号名、发布时间及播放量，证明力较强',
+            aiVerified: true,
             isDemo:   true,
           },
           {
@@ -85,6 +86,7 @@ export async function createDemoCase(db, userId) {
             evType:   '账号截图',
             group:    '被告身份证据',
             verdict:  '被告抖音账号主页，含粉丝数及实名认证信息',
+            aiVerified: true,
             isDemo:   true,
           },
           {
@@ -95,6 +97,7 @@ export async function createDemoCase(db, userId) {
             evType:   '举报记录',
             group:    '平台举报记录',
             verdict:  '平台举报成功截图，含受理编号和时间戳',
+            aiVerified: true,
             isDemo:   true,
           },
         ],

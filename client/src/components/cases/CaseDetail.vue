@@ -70,6 +70,8 @@
     <div class="ev-layout">
       <EvidenceGuide :guide="c.guide" />
       <div>
+        <EvidenceUpload v-if="!c.isDemo" :case-id="c.id" :case-info="c" @uploaded="onUploaded" />
+        <div v-else class="pnote" style="margin-bottom:16px">💡 这是演示案件，无法上传真实证据。新建案件后可上传您的截图。</div>
         <EvidenceList
           :case-id="c.id"
           :evidence="c.evidence || []"
@@ -79,8 +81,6 @@
           @preview="onEvPreview"
           @download="handleDownloadEvidence"
         />
-        <EvidenceUpload v-if="!c.isDemo" :case-id="c.id" :case-info="c" @uploaded="onUploaded" />
-        <div v-else class="pnote" style="margin-top:12px">💡 这是演示案件，无法上传真实证据。新建案件后可上传您的截图。</div>
       </div>
     </div>
 
@@ -185,7 +185,7 @@ function onUploaded(evs) {
     const idx = store.cases.findIndex(x => x.id === store.activeCase.id)
     if (idx !== -1) store.cases[idx].status = 'active'
   }
-  toast(`✅ 分析完成，${evs.filter(e=>e.status==='valid').length} 份有效证据`)
+  toast(`✅ 已上传 ${evs.length} 张图片，请在下方「待认证」中选择后进行证据归类认证`)
 }
 function onEvPreview(ev) {
   previewEv.value = ev

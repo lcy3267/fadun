@@ -13,6 +13,9 @@ export const uploadEvidence = (caseId, files, onProgress) => {
 
 export const deleteEvidence = (id) => api.delete(`/evidence/${id}`)
 
+export const verifyEvidence = (evidenceIds) =>
+  api.post('/evidence/verify', { evidenceIds })
+
 export const downloadEvidenceZip = async (caseId) => {
   const token = localStorage.getItem('fd_token')
   const res = await axios.get(`/api/evidence/download/${caseId}`, {

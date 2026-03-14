@@ -9,8 +9,8 @@
         {{ ev.filename }}
         <span v-if="ev.isDemo" class="evi-demo-badge">示例</span>
       </div>
-      <div class="evi-tg">{{ isDraft ? '⚠ 归类待定' : '✅ ' + ev.evType }}</div>
-      <div class="evi-v">{{ ev.verdict }}</div>
+      <div class="evi-tg">{{ isPending ? '⏳ 待认证' : isDraft ? '⚠ 归类待定' : '✅ ' + (ev.evType || '—') }}</div>
+      <div class="evi-v">{{ ev.verdict || (isPending ? '上传后请选择并点击「进行证据归类认证」' : '') }}</div>
     </div>
     <button class="evi-del" @click.stop="$emit('delete', ev.id)">🗑</button>
   </div>
@@ -20,8 +20,9 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  ev:      { type: Object, required: true },
-  isDraft: { type: Boolean, default: false },
+  ev:       { type: Object, required: true },
+  isDraft:  { type: Boolean, default: false },
+  isPending: { type: Boolean, default: false },
 })
 const emit = defineEmits(['delete', 'preview'])
 

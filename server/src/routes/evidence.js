@@ -1,7 +1,7 @@
 import { requireAuth }     from '../middleware/auth.js'
 import { analyzeEvidence } from '../services/ai.js'
 import fmultipart          from '@fastify/multipart'
-import { mkdirSync, unlinkSync, existsSync, writeFileSync, createReadStream } from 'fs'
+import { mkdirSync, unlinkSync, existsSync, writeFileSync, readFileSync, createReadStream } from 'fs'
 import { join, dirname, basename }   from 'path'
 import archiver from 'archiver'
 import { fileURLToPath }   from 'url'
@@ -14,10 +14,10 @@ export default async function evidenceRoutes(app) {
   app.addHook('preHandler', requireAuth)
 
   // ── POST /api/evidence/upload ────────────────────
-  // 一次上传一批图，并发到 ai 分析
+  // 仅上传到服务器并落库，标记 caseId；不调用 AI，status=pending, aiVerified=false
   app.post('/upload', async (req, reply) => {
     const parts = req.parts()
-    let caseId, caseData
+    let caseId
     const files = []
 
     for await (const part of parts) {
@@ -33,8 +33,7 @@ export default async function evidenceRoutes(app) {
 
     // 验证案件归属
     const c = await app.db.case.findFirst({
-      where:   { id: caseId, userId: req.user.userId },
-      include: { plaintiff: true, defendant: true },
+      where: { id: caseId, userId: req.user.userId },
     })
     if (!c) return reply.code(404).send({ error: '案件不存在' })
 
@@ -42,22 +41,89 @@ export default async function evidenceRoutes(app) {
     const imageFiles = files.filter(f => f.mimetype.startsWith('image/'))
     if (!imageFiles.length) return reply.code(400).send({ error: '请上传图片文件' })
 
-    // 准备保存目录
     const caseDir = join(UPLOADS_ROOT, String(caseId))
     mkdirSync(caseDir, { recursive: true })
 
-    // 保存文件到磁盘
-    const saved = imageFiles.map(f => {
+    const created = await Promise.all(imageFiles.map(async (f) => {
       const safeName = `${Date.now()}_${f.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-      const filepath  = join(caseDir, safeName)
+      const filepath = join(caseDir, safeName)
       writeFileSync(filepath, f.buf)
-      return { filename: f.filename, safeName, filepath, mimetype: f.mimetype, b64: f.buf.toString('base64') }
+      return app.db.evidence.create({
+        data: {
+          caseId,
+          filename: f.filename,
+          filepath: `${caseId}/${safeName}`,
+          mimetype: f.mimetype,
+          status:   'pending',
+          evType:   '',
+          group:    null,
+          verdict:  '',
+          aiVerified: false,
+          isDemo:   false,
+        },
+      })
+    }))
+
+    await app.db.case.update({ where: { id: caseId }, data: { updatedAt: new Date() } })
+    return created
+  })
+
+  // ── POST /api/evidence/verify ────────────────────
+  // 用户多选待认证图片，调用 AI 进行证据归类认证；已识别（aiVerified=true）禁止再认证
+  app.post('/verify', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['evidenceIds'],
+        properties: { evidenceIds: { type: 'array', items: { type: 'integer' } } },
+      },
+    },
+  }, async (req, reply) => {
+    const { evidenceIds } = req.body
+    if (!Array.isArray(evidenceIds) || !evidenceIds.length) {
+      return reply.code(400).send({ error: '请选择要认证的证据' })
+    }
+
+    const ids = [...new Set(evidenceIds.map(Number))]
+    const rows = await app.db.evidence.findMany({
+      where: { id: { in: ids } },
+      include: { case: { select: { userId: true, id: true } } },
     })
 
-    // 调用 Claude 分析
-    const groups   = JSON.parse(c.groups || '[]')
+    if (rows.length !== ids.length) {
+      return reply.code(404).send({ error: '部分证据不存在' })
+    }
+    const caseId = rows[0].caseId
+    if (rows.some(r => r.caseId !== caseId)) {
+      return reply.code(400).send({ error: '所选证据须属于同一案件' })
+    }
+    if (rows[0].case.userId !== req.user.userId) {
+      return reply.code(404).send({ error: '案件不存在' })
+    }
+    const alreadyVerified = rows.filter(r => r.aiVerified)
+    if (alreadyVerified.length) {
+      return reply.code(400).send({ error: '已识别的图片禁止再次认证' })
+    }
+
+    const c = await app.db.case.findFirst({
+      where:   { id: caseId, userId: req.user.userId },
+      include: { plaintiff: true, defendant: true },
+    })
+    const groups = JSON.parse(c.groups || '[]')
+
+    const images = rows.map(ev => {
+      const fullPath = join(UPLOADS_ROOT, ev.filepath)
+      if (!existsSync(fullPath)) return null
+      const buf = readFileSync(fullPath)
+      return { mimetype: ev.mimetype, b64: buf.toString('base64') }
+    }).filter(Boolean)
+
+    if (images.length !== rows.length) {
+      return reply.code(400).send({ error: '部分证据文件缺失，无法认证' })
+    }
+
     const aiResults = await analyzeEvidence({
-      images: saved.map(s => ({ mimetype: s.mimetype, b64: s.b64 })),
+      images,
       caseInfo: {
         type:      c.type,
         goal:      c.goal,
@@ -67,31 +133,26 @@ export default async function evidenceRoutes(app) {
       },
     })
 
-    // 写入数据库
-    const created = await Promise.all(saved.map(async (s, i) => {
+    const updated = await Promise.all(rows.map((ev, i) => {
       const r = aiResults[i]
-      return app.db.evidence.create({
-        data: {
-          caseId,
-          filename: s.filename,
-          filepath: `${caseId}/${s.safeName}`,
-          mimetype: s.mimetype,
-          status:   r.valid ? 'valid' : 'invalid',
-          evType:   r.evType  || '其他',
-          group:    r.valid ? (r.group || null) : null,
-          verdict:  r.verdict || '',
-          isDemo:   false,
+      return app.db.evidence.update({
+        where: { id: ev.id },
+        data:  {
+          status:     r.valid ? 'valid' : 'invalid',
+          evType:     r.evType || '其他',
+          group:      r.valid ? (r.group || null) : null,
+          verdict:    r.verdict || '',
+          aiVerified: true,
         },
       })
     }))
 
-    // 更新案件：若已完结且本批有有效证据，状态改为进行中
     const hasValidNew = aiResults.some(r => r.valid)
     const caseUpdate = { updatedAt: new Date() }
     if (c.status === 'done' && hasValidNew) caseUpdate.status = 'active'
     await app.db.case.update({ where: { id: caseId }, data: caseUpdate })
 
-    return created
+    return updated
   })
 
   // ── DELETE /api/evidence/:id ─────────────────────

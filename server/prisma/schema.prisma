@@ -57,16 +57,17 @@ model Defendant {
 }
 
 model Evidence {
-  id        Int      @id @default(autoincrement())
-  caseId    Int
-  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  filename  String
-  filepath  String   // server path relative to uploads/
-  mimetype  String
-  status    String   @default("valid") // valid | invalid
-  evType    String   @default("")
-  group     String?
-  verdict   String   @default("")
-  isDemo    Boolean  @default(false)   // placeholder evidence in demo case
-  createdAt DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  caseId     Int
+  case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  filename   String
+  filepath   String   // server path relative to uploads/
+  mimetype   String
+  status     String   @default("pending") // pending | valid | invalid
+  evType     String   @default("")
+  group      String?
+  verdict    String   @default("")
+  aiVerified Boolean  @default(false)   // true = 已识别，禁止再次认证
+  isDemo     Boolean  @default(false)   // placeholder evidence in demo case
+  createdAt  DateTime @default(now())
 }
