@@ -26,7 +26,7 @@ export async function chat(messages, { maxTokens = 1000 } = {}) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
   })
-  console.log('===model===', baseUrl+model )
+  console.log('===model===', model)
   if (!res.ok) {
     const err = await res.text()
     throw new Error(`OpenAI provider error ${res.status}: ${err}`)
