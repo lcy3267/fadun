@@ -68,7 +68,7 @@ export async function llmChat(prompt, opts = {}) {
   try {
     await logAiEvent({
       provider: providerName,
-      model: meta.model,
+      model: chatOpts.model,
       endpoint: meta.endpoint,
       direction: 'request',
       payload: { messages, opts },
@@ -85,7 +85,7 @@ export async function llmChat(prompt, opts = {}) {
 
     await logAiEvent({
       provider: providerName,
-      model: meta.model,
+      model: chatOpts.model,
       endpoint: meta.endpoint,
       direction: 'response',
       payload: { text: raw },
@@ -139,16 +139,16 @@ export async function llmVision(images, prompt, opts = {}) {
     }]
   }
 
-  const meta = resolveMetaForVision(providerName)
+  const meta = resolveMetaForVision(providerName);
   const chatOpts = { ...opts }
   if (providerName !== 'anthropic') {
     chatOpts.model = process.env.OPENAI_V_MODEL || process.env.OPENAI_MODEL || meta.model
   }
-
+  
   try {
     await logAiEvent({
       provider: providerName,
-      model: meta.model,
+      model: chatOpts.model,
       endpoint: meta.endpoint,
       direction: 'request',
       payload: {
@@ -162,7 +162,7 @@ export async function llmVision(images, prompt, opts = {}) {
 
     await logAiEvent({
       provider: providerName,
-      model: meta.model,
+      model: chatOpts.model,
       endpoint: meta.endpoint,
       direction: 'response',
       payload: { text: raw },

@@ -59,7 +59,7 @@ export async function chat(messages, { maxTokens = 1000, model } = {}) {
   const body = {
     model: finalModel,
     max_tokens: maxTokens,
-    messages,
+    messages
   }
 
   // OpenRouter：不将推理 token 放进响应（模型仍可内部推理）；见官方 reasoning 文档

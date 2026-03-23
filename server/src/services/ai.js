@@ -21,7 +21,7 @@ export async function generateGroups({ type, goal, desc, defendant }) {
 - desc：该分组一句话说明
 - guide：具体搜集建议，2-3 句话，可提及具体 App 或平台
 
-只返回 JSON 数组，不要有任何其他文字：
+只返回 JSON 数组，，禁止返回推理过程, 不要有任何其他文字：
 [{"group":"...","desc":"...","guide":"..."}]`
 
   const text   = await llmChat(prompt, { maxTokens: 1000 })
@@ -40,7 +40,7 @@ export async function generateAnalysis({ type, goal, desc, defendant }) {
 案情描述：${desc}
 
 【任务】
-对以上案情进行专业分析，只返回如下 JSON，不要有任何其他文字：
+对以上案情进行专业分析，，禁止返回推理过程, 只返回如下 JSON，不要有任何其他文字：
 {
   "summary": "案情核心问题一句话概括，20字以内",
   "strength": 70,
@@ -78,12 +78,12 @@ ${groups.join('、')}
 2) 若不是聊天截图：按画面内容归入上述分类，给出 valid、evType、group、verdict即可。
 3) 若是聊天截图：根据图中聊天内容判断对本案的证明力。若内容可辨认且与案情、被告相关，则 valid 为 true，正常填写 evType、group、verdict；若无法识别有效内容（模糊、残缺、与案情无关等），则 valid 为 false，group 为 null，verdict 写：「未能识别有效聊天内容，建议滚动截图或补充更多聊天内容」（或等价表述，不超过40字）。
 
-只返回 JSON 数组，不要有其他文字：
+只返回 JSON 数组，禁止返回推理过程，不要有其他文字 ：
 [{"valid":true,"evType":"证据类型简称4字以内","group":"归属分类名称或null","verdict":"对本案证明力具体说明不超过40字"}]
 
 注意：数组长度必须等于图片数量（${images.length}）；只返回 JSON。`
 
-  const text   = await llmVision(images, prompt, { maxTokens: 1000 })
+  const text   = await llmVision(images, prompt, { maxTokens: 2000 })
   const parsed = JSON.parse(text)
   while (parsed.length < images.length) {
     parsed.push({ valid: false, evType: '其他', group: null, verdict: 'AI 未能分析此图片' })
@@ -113,7 +113,7 @@ export async function generateDocument({ caseData, evidenceList }) {
 ${evSummary}
 
 【任务】
-请生成一份结构完整、语言严谨的维权陈述书，只返回如下 JSON，不要有任何其他文字：
+请生成一份结构完整、语言严谨的维权陈述书，只返回如下 JSON，，禁止返回推理过程, 不要有任何其他文字：
 {
   "title": "维权陈述书",
   "sections": [
