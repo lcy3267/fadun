@@ -75,6 +75,7 @@ export async function llmChat(prompt, opts = {}) {
     })
 
     const chatOpts = { ...opts }
+
     if (providerName !== 'anthropic') {
       const { model } = getOpenAIConfig()
       if (chatOpts.model === undefined) chatOpts.model = model

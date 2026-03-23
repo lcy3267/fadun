@@ -24,7 +24,7 @@ export async function generateGroups({ type, goal, desc, defendant }) {
 只返回 JSON 数组，不要有任何其他文字：
 [{"group":"...","desc":"...","guide":"..."}]`
 
-  const text   = await llmChat(prompt, { maxTokens: 800 })
+  const text   = await llmChat(prompt, { maxTokens: 1000 })
   const parsed = JSON.parse(text)
   return { groups: parsed.map(g => g.group), guide: parsed }
 }
@@ -52,7 +52,7 @@ export async function generateAnalysis({ type, goal, desc, defendant }) {
 
 注意：strength 必须是 0-100 整数；keyPoints 和 risks 各 2-3 条，每条 20 字以内。`
 
-  const text = await llmChat(prompt, { maxTokens: 600 })
+  const text = await llmChat(prompt, { maxTokens: 1000 })
   return JSON.parse(text)
 }
 
