@@ -41,6 +41,19 @@ function resolveMetaForChat(providerName) {
   return { model, endpoint }
 }
 
+function resolveMetaForVision(providerName) {
+  if (providerName === 'anthropic') {
+    const model = anthropicProvider.MODELS?.default
+    const endpoint = 'anthropic.messages.create'
+    return { model, endpoint }
+  }
+
+  const { baseUrl } = getOpenAIConfig()
+  const visionModel = process.env.OPENAI_V_MODEL || process.env.OPENAI_MODEL || getOpenAIConfig().model
+  const endpoint = `${baseUrl}`
+  return { model: visionModel, endpoint }
+}
+
 /**
  * 发送纯文本对话
  * @param {string} prompt
@@ -61,7 +74,13 @@ export async function llmChat(prompt, opts = {}) {
       payload: { messages, opts },
     })
 
-    const raw = await p.chat(messages, opts)
+    const chatOpts = { ...opts }
+    if (providerName !== 'anthropic') {
+      const { model } = getOpenAIConfig()
+      if (chatOpts.model === undefined) chatOpts.model = model
+    }
+
+    const raw = await p.chat(messages, chatOpts)
 
     await logAiEvent({
       provider: providerName,
@@ -119,7 +138,11 @@ export async function llmVision(images, prompt, opts = {}) {
     }]
   }
 
-  const meta = resolveMetaForChat(providerName)
+  const meta = resolveMetaForVision(providerName)
+  const chatOpts = { ...opts }
+  if (providerName !== 'anthropic') {
+    chatOpts.model = process.env.OPENAI_V_MODEL || process.env.OPENAI_MODEL || meta.model
+  }
 
   try {
     await logAiEvent({
@@ -134,7 +157,7 @@ export async function llmVision(images, prompt, opts = {}) {
       },
     })
 
-    const raw = await p.chat(messages, opts)
+    const raw = await p.chat(messages, chatOpts)
 
     await logAiEvent({
       provider: providerName,

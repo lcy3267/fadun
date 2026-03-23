@@ -7,6 +7,7 @@
  *                      DeepSeek 填 https://api.deepseek.com/v1
  *   OPENAI_MODEL     - 模型名，默认 gpt-4o
  *                      DeepSeek 填 deepseek-chat
+ *   OPENAI_V_MODEL   - 视觉/图片模型（仅在 llmVision 时使用）
  */
 
 const DEFAULT_BASE = 'https://api.openai.com/v1'
@@ -19,14 +20,14 @@ export function getConfig() {
   }
 }
 
-export async function chat(messages, { maxTokens = 1000 } = {}) {
-  const { apiKey, baseUrl, model } = getConfig()
+export async function chat(messages, { maxTokens = 1000, model } = {}) {
+  const { apiKey, baseUrl, model: defaultModel } = getConfig()
+  const finalModel = model || defaultModel
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
+    body: JSON.stringify({ model: finalModel, max_tokens: maxTokens, messages }),
   })
-  console.log('===model===', model)
   if (!res.ok) {
     const err = await res.text()
     throw new Error(`OpenAI provider error ${res.status}: ${err}`)
