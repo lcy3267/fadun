@@ -66,6 +66,9 @@ export async function llmChat(prompt, opts = {}) {
   const meta = resolveMetaForChat(providerName)
 
   try {
+
+    const chatOpts = { ...opts }
+
     await logAiEvent({
       provider: providerName,
       model: chatOpts.model,
@@ -73,8 +76,6 @@ export async function llmChat(prompt, opts = {}) {
       direction: 'request',
       payload: { messages, opts },
     })
-
-    const chatOpts = { ...opts }
 
     if (providerName !== 'anthropic') {
       const { model } = getOpenAIConfig()
