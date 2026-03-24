@@ -16,12 +16,25 @@
 
 const DEFAULT_BASE = 'https://api.openai.com/v1'
 
+function normalizeBaseUrl(baseUrl) {
+  if (!baseUrl) return DEFAULT_BASE
+  const trimmed = String(baseUrl).replace(/\/+$/, '')
+  if (/^https?:\/\/api\.openrouter\.ai(?:\/v1)?$/i.test(trimmed)) {
+    return 'https://openrouter.ai/api/v1'
+  }
+  return trimmed
+}
+
 export function getConfig() {
-  return {
+  const cfg = {
     apiKey:  process.env.OPENAI_API_KEY,
-    baseUrl: process.env.OPENAI_BASE_URL || DEFAULT_BASE,
+    baseUrl: normalizeBaseUrl(process.env.OPENAI_BASE_URL || DEFAULT_BASE),
     model:   process.env.OPENAI_MODEL    || 'gpt-4o',
   }
+  // #region agent log
+  fetch('http://127.0.0.1:7541/ingest/3f9c785f-d64e-40d0-b413-c54b1897c892',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ac8d56'},body:JSON.stringify({sessionId:'ac8d56',runId:'post-fix',hypothesisId:'H1',location:'server/src/services/providers/openai.js:getConfig',message:'resolved normalized provider config',data:{hasApiKey:Boolean(cfg.apiKey),baseUrl:cfg.baseUrl,model:cfg.model},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  return cfg
 }
 
 /** 是否应在请求体中加入「不返回推理 token」配置（主要给 OpenRouter 用） */
@@ -75,7 +88,11 @@ export async function chat(messages, { maxTokens = 1000, model } = {}) {
     headers['X-OpenRouter-Title'] = 'fadun'
   }
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const requestUrl = `${baseUrl}/chat/completions`
+  // #region agent log
+  fetch('http://127.0.0.1:7541/ingest/3f9c785f-d64e-40d0-b413-c54b1897c892',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ac8d56'},body:JSON.stringify({sessionId:'ac8d56',runId:'post-fix',hypothesisId:'H2',location:'server/src/services/providers/openai.js:chat',message:'outbound request url',data:{requestUrl,isOpenRouter:/openrouter\\.ai/i.test(baseUrl),hasReasoningConfig:Boolean(body.reasoning)},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  const res = await fetch(requestUrl, {
     method:  'POST',
     headers,
     body: JSON.stringify(body),
