@@ -53,6 +53,7 @@ export default async function evidenceRoutes(app) {
           caseId,
           filename: f.filename,
           filepath: `${caseId}/${safeName}`,
+          ocrText:  null,
           mimetype: f.mimetype,
           status:   'pending',
           evType:   '',
@@ -142,6 +143,7 @@ export default async function evidenceRoutes(app) {
           evType:     r.evType || '其他',
           group:      r.valid ? (r.group || null) : null,
           verdict:    r.verdict || '',
+          ocrText:    r.ocrText || '',
           aiVerified: true,
         },
       })

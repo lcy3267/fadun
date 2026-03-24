@@ -62,6 +62,7 @@ model Evidence {
   case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
   filename   String
   filepath   String   // server path relative to uploads/
+  ocrText    String?
   mimetype   String
   status     String   @default("pending") // pending | valid | invalid
   evType     String   @default("")
