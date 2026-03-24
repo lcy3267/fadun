@@ -42,11 +42,12 @@ export const useCasesStore = defineStore('cases', () => {
   }
 
   async function uploadEvidence(caseId, files) {
-    const created = await evidenceApi.uploadEvidence(caseId, files)
+    const res = await evidenceApi.uploadEvidence(caseId, files)
+    const created = res?.created || []
     if (activeCase.value?.id === caseId) {
       activeCase.value.evidence.push(...created)
     }
-    return created
+    return { taskId: res?.taskId, created }
   }
 
   async function deleteEvidence(caseId, evId) {
@@ -57,27 +58,8 @@ export const useCasesStore = defineStore('cases', () => {
   }
 
   async function verifyEvidence(caseId, evidenceIds) {
-    const updated = await evidenceApi.verifyEvidence(evidenceIds)
-    if (activeCase.value?.id === caseId) {
-      for (const u of updated) {
-        const idx = activeCase.value.evidence.findIndex(e => e.id === u.id)
-        if (idx !== -1) activeCase.value.evidence[idx] = u
-      }
-      if (activeCase.value.status === 'done' && updated.some(u => u.status === 'valid')) {
-        activeCase.value.status = 'active'
-      }
-    }
-    const caseIdx = cases.value.findIndex(x => x.id === caseId)
-    if (caseIdx !== -1 && cases.value[caseIdx].evidence) {
-      for (const u of updated) {
-        const idx = cases.value[caseIdx].evidence.findIndex(e => e.id === u.id)
-        if (idx !== -1) cases.value[caseIdx].evidence[idx] = u
-      }
-      if (cases.value[caseIdx].status === 'done' && updated.some(u => u.status === 'valid')) {
-        cases.value[caseIdx].status = 'active'
-      }
-    }
-    return updated
+    const res = await evidenceApi.verifyEvidence(evidenceIds)
+    return { taskId: res?.taskId }
   }
 
   async function generateDocument(caseId) {

@@ -1,13 +1,36 @@
 import { requireAuth }     from '../middleware/auth.js'
-import { analyzeEvidence } from '../services/ai.js'
 import fmultipart          from '@fastify/multipart'
-import { mkdirSync, unlinkSync, existsSync, writeFileSync, readFileSync, createReadStream } from 'fs'
+import { mkdirSync, unlinkSync, existsSync, createWriteStream } from 'fs'
+import { pipeline } from 'stream/promises'
 import { join, dirname, basename }   from 'path'
+import { createHash } from 'crypto'
 import archiver from 'archiver'
 import { fileURLToPath }   from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const UPLOADS_ROOT = join(__dirname, '../../uploads')
+const ALLOWED_MIME = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+])
+const ALLOWED_EXT = new Set(['.pdf', '.docx', '.txt', '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'])
+
+function splitName(name = '') {
+  const normalized = (name || '').trim()
+  const dot = normalized.lastIndexOf('.')
+  if (dot <= 0 || dot === normalized.length - 1) return { base: normalized || 'file', ext: '' }
+  return { base: normalized.slice(0, dot), ext: normalized.slice(dot).toLowerCase() }
+}
+
+function isAllowedFile(mimetype, ext) {
+  return ALLOWED_MIME.has((mimetype || '').toLowerCase()) || ALLOWED_EXT.has((ext || '').toLowerCase())
+}
 
 export default async function evidenceRoutes(app) {
   await app.register(fmultipart, { limits: { fileSize: 20 * 1024 * 1024 } }) // 20MB per file
@@ -18,55 +41,96 @@ export default async function evidenceRoutes(app) {
   app.post('/upload', async (req, reply) => {
     const parts = req.parts()
     let caseId
-    const files = []
+    let caseChecked = false
+    const created = []
 
     for await (const part of parts) {
       if (part.type === 'field' && part.fieldname === 'caseId') {
         caseId = Number(part.value)
-      } else if (part.type === 'file') {
-        const buf = await part.toBuffer()
-        files.push({ filename: part.filename, mimetype: part.mimetype, buf })
+        continue
       }
+      if (part.type !== 'file') continue
+
+      if (!caseId) {
+        part.file.resume()
+        continue
+      }
+
+      if (!caseChecked) {
+        const c = await app.db.case.findFirst({
+          where: { id: caseId, userId: req.user.userId },
+        })
+        if (!c) {
+          part.file.resume()
+          return reply.code(404).send({ error: '案件不存在' })
+        }
+        caseChecked = true
+      }
+
+      const caseDir = join(UPLOADS_ROOT, String(caseId))
+      mkdirSync(caseDir, { recursive: true })
+
+      const originalName = part.filename || 'file'
+      const { base, ext } = splitName(originalName)
+      if (!isAllowedFile(part.mimetype, ext)) {
+        part.file.resume()
+        continue
+      }
+
+      const safeName = `${Date.now()}_${base.replace(/[^a-zA-Z0-9._-]/g, '_')}${ext}`
+      const fullPath = join(caseDir, safeName)
+      const relativePath = `${caseId}/${safeName}`
+      const hash = createHash('sha256')
+      let size = 0
+      part.file.on('data', (chunk) => {
+        size += chunk.length
+        hash.update(chunk)
+      })
+      await pipeline(part.file, createWriteStream(fullPath))
+
+      created.push(await app.db.evidence.create({
+        data: {
+          caseId,
+          filename: originalName,
+          filepath: relativePath,
+          ext,
+          size,
+          sha256: hash.digest('hex'),
+          text: null,
+          meta: null,
+          processedAt: null,
+          ocrText: null,
+          mimetype: part.mimetype || '',
+          status: 'pending',
+          evType: '',
+          group: null,
+          verdict: '',
+          aiVerified: false,
+          isDemo: false,
+        },
+      }))
     }
 
     if (!caseId) return reply.code(400).send({ error: '缺少 caseId' })
 
-    // 验证案件归属
-    const c = await app.db.case.findFirst({
-      where: { id: caseId, userId: req.user.userId },
+    if (!created.length) {
+      return reply.code(400).send({ error: '文件格式不支持（仅支持 jpg/png/webp/pdf/docx/txt）' })
+    }
+
+    const parseTask = await app.db.task.create({
+      data: {
+        userId: req.user.userId,
+        caseId,
+        type: 'evidence_parse',
+        status: 'queued',
+        progress: 0,
+        payload: JSON.stringify({ evidenceIds: created.map(e => e.id) }),
+      },
     })
-    if (!c) return reply.code(404).send({ error: '案件不存在' })
-
-    // 过滤图片文件
-    const imageFiles = files.filter(f => f.mimetype.startsWith('image/'))
-    if (!imageFiles.length) return reply.code(400).send({ error: '请上传图片文件' })
-
-    const caseDir = join(UPLOADS_ROOT, String(caseId))
-    mkdirSync(caseDir, { recursive: true })
-
-    const created = await Promise.all(imageFiles.map(async (f) => {
-      const safeName = `${Date.now()}_${f.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-      const filepath = join(caseDir, safeName)
-      writeFileSync(filepath, f.buf)
-      return app.db.evidence.create({
-        data: {
-          caseId,
-          filename: f.filename,
-          filepath: `${caseId}/${safeName}`,
-          ocrText:  null,
-          mimetype: f.mimetype,
-          status:   'pending',
-          evType:   '',
-          group:    null,
-          verdict:  '',
-          aiVerified: false,
-          isDemo:   false,
-        },
-      })
-    }))
+    app.taskRunner.enqueue(parseTask).catch(() => {})
 
     await app.db.case.update({ where: { id: caseId }, data: { updatedAt: new Date() } })
-    return created
+    return { taskId: parseTask.id, created }
   })
 
   // ── POST /api/evidence/verify ────────────────────
@@ -106,55 +170,23 @@ export default async function evidenceRoutes(app) {
       return reply.code(400).send({ error: '已识别的图片禁止再次认证' })
     }
 
-    const c = await app.db.case.findFirst({
-      where:   { id: caseId, userId: req.user.userId },
-      include: { plaintiff: true, defendant: true },
-    })
-    const groups = JSON.parse(c.groups || '[]')
-
-    const images = rows.map(ev => {
-      const fullPath = join(UPLOADS_ROOT, ev.filepath)
-      if (!existsSync(fullPath)) return null
-      const buf = readFileSync(fullPath)
-      return { mimetype: ev.mimetype, b64: buf.toString('base64') }
-    }).filter(Boolean)
-
-    if (images.length !== rows.length) {
+    if (rows.some(ev => !existsSync(join(UPLOADS_ROOT, ev.filepath)))) {
       return reply.code(400).send({ error: '部分证据文件缺失，无法认证' })
     }
 
-    const aiResults = await analyzeEvidence({
-      images,
-      caseInfo: {
-        type:      c.type,
-        goal:      c.goal,
-        desc:      c.desc,
-        defendant: { name: c.defendant?.name || '', rel: c.defendant?.rel || '' },
-        groups,
+    const task = await app.db.task.create({
+      data: {
+        userId: req.user.userId,
+        caseId,
+        type: 'evidence_analyze',
+        status: 'queued',
+        progress: 0,
+        payload: JSON.stringify({ evidenceIds: rows.map(r => r.id) }),
       },
     })
+    app.taskRunner.enqueue(task).catch(() => {})
 
-    const updated = await Promise.all(rows.map((ev, i) => {
-      const r = aiResults[i]
-      return app.db.evidence.update({
-        where: { id: ev.id },
-        data:  {
-          status:     r.valid ? 'valid' : 'invalid',
-          evType:     r.evType || '其他',
-          group:      r.valid ? (r.group || null) : null,
-          verdict:    r.verdict || '',
-          ocrText:    r.ocrText || '',
-          aiVerified: true,
-        },
-      })
-    }))
-
-    const hasValidNew = aiResults.some(r => r.valid)
-    const caseUpdate = { updatedAt: new Date() }
-    if (c.status === 'done' && hasValidNew) caseUpdate.status = 'active'
-    await app.db.case.update({ where: { id: caseId }, data: caseUpdate })
-
-    return updated
+    return { taskId: task.id }
   })
 
   // ── DELETE /api/evidence/:id ─────────────────────

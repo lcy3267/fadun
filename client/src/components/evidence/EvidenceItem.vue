@@ -2,7 +2,7 @@
   <div class="evi" :class="{inv: isDraft}" @click="handlePreview">
     <div class="evi-th">
       <img v-if="thumbUrl" :src="thumbUrl" alt="" />
-      <span v-else>{{ ev.mimetype?.includes('pdf') ? '📄' : '🖼' }}</span>
+      <span v-else>{{ fileIcon }}</span>
     </div>
     <div class="evi-info">
       <div class="evi-n">
@@ -26,13 +26,24 @@ const props = defineProps({
 })
 const emit = defineEmits(['delete', 'preview'])
 
+const isImage = computed(() => (props.ev.mimetype || '').startsWith('image/'))
+const fileIcon = computed(() => {
+  const type = (props.ev.mimetype || '').toLowerCase()
+  if (type.includes('pdf')) return '📄'
+  if (type.includes('word') || type.includes('document') || type.includes('docx')) return '📝'
+  if (type.startsWith('text/')) return '📃'
+  return '📎'
+})
+
 const thumbUrl = computed(() => {
+  if (!isImage.value) return null
   if (props.ev.isDemo) return null
   if (!props.ev.filepath) return null
   return `/uploads/${props.ev.filepath}`
 })
 
 function handlePreview() {
+  if (!isImage.value) return
   if (!thumbUrl.value) return
   emit('preview', props.ev)
 }

@@ -64,11 +64,14 @@ export async function llmChat(prompt, opts = {}) {
   const p = getProvider()
   const messages = [{ role: 'user', content: prompt }]
   const meta = resolveMetaForChat(providerName)
+  const chatOpts = { ...opts }
+
+  if (providerName !== 'anthropic' && chatOpts.model === undefined) {
+    const { model } = getOpenAIConfig()
+    chatOpts.model = model
+  }
 
   try {
-
-    const chatOpts = { ...opts }
-
     await logAiEvent({
       provider: providerName,
       model: chatOpts.model,
@@ -76,11 +79,6 @@ export async function llmChat(prompt, opts = {}) {
       direction: 'request',
       payload: { messages, opts },
     })
-
-    if (providerName !== 'anthropic') {
-      const { model } = getOpenAIConfig()
-      if (chatOpts.model === undefined) chatOpts.model = model
-    }
 
     const raw = await p.chat(messages, chatOpts)
 
@@ -96,7 +94,7 @@ export async function llmChat(prompt, opts = {}) {
   } catch (err) {
     await logAiEvent({
       provider: providerName,
-      model: meta.model,
+      model: chatOpts.model || meta.model,
       endpoint: meta.endpoint,
       direction: 'error',
       payload: { message: err?.message || String(err) },

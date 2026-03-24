@@ -13,6 +13,7 @@ model User {
   password  String
   createdAt DateTime @default(now())
   cases     Case[]
+  tasks     Task[]
 }
 
 model Case {
@@ -33,6 +34,7 @@ model Case {
   plaintiff   Plaintiff?
   defendant   Defendant?
   evidence    Evidence[]
+  tasks       Task[]
 }
 
 model Plaintiff {
@@ -62,6 +64,12 @@ model Evidence {
   case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
   filename   String
   filepath   String   // server path relative to uploads/
+  ext        String   @default("")
+  size       Int      @default(0)
+  sha256     String   @default("")
+  text       String?
+  meta       String?  // JSON string
+  processedAt DateTime?
   ocrText    String?
   mimetype   String
   status     String   @default("pending") // pending | valid | invalid
@@ -71,4 +79,20 @@ model Evidence {
   aiVerified Boolean  @default(false)   // true = 已识别，禁止再次认证
   isDemo     Boolean  @default(false)   // placeholder evidence in demo case
   createdAt  DateTime @default(now())
+}
+
+model Task {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  caseId    Int?
+  case      Case?    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type      String
+  status    String   @default("queued") // queued | running | succeeded | failed | canceled
+  progress  Int      @default(0)
+  payload   String   // JSON string
+  result    String?  // JSON string
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

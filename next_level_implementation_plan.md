@@ -1,4 +1,4 @@
-﻿# 法盾 next_level.md 改造落地方案（基于当前代码审查）
+# 法盾 next_level.md 改造落地方案（基于当前代码审查）
 
 > 目标：把“用户驱动的工具”逐步升级为“目标驱动的协作者（Case Agent）”，并确保每一步都能在现有 `Vue3 + Fastify + Prisma(SQLite)` 架构中稳定交付。
 
@@ -17,10 +17,10 @@
   - 后端：`server/src/routes/ai.js`（`POST /api/ai/document`）+ `server/src/services/ai.js`（`generateDocument`）
 
 ### 0.2 与 next_level.md 的差距（概览）
-- **证据格式**：目前仅支持图片（后端上传处强制过滤 `image/*`；前端 `accept="image/*"`）。
-- **异步与进度**：上传有进度，AI 认证没有“逐份完成”的进度推送；认证是一次请求同步阻塞返回。
-- **Agent Loop**：目前只有“固定流程的 Prompt 调用”，没有“工具化 + 自主决策循环”。
-- **主动性**：没有事件触发/定时巡检。
+- **证据格式**：阶段一已完成多格式接入（`image/pdf/docx/txt`）。
+- **异步与进度**：后端已完成任务化与 SSE 推送；前端认证已接入任务流。上传后的解析进度前端尚未接线展示（剩余优化项）。
+- **Agent Loop**：目前仍是“固定流程的 Prompt 调用”，尚未进入“工具化 + 自主决策循环”。
+- **主动性**：尚未实现事件触发/定时巡检。
 
 ### 0.3 需要优先修的底座问题（阻塞项）
 - `llmChat` 内存在 `chatOpts` 定义前访问 `chatOpts.model` 的错误，可能导致文本类 AI 调用直接抛 `ReferenceError`：  
@@ -28,82 +28,63 @@
 
 ---
 
-## 1. 阶段一：夯实基础（格式支持 + 异步 + 进度反馈）
+## 1. 阶段一：夯实基础（当前功能基线）
 
-> 目标：把“证据处理”做成**可扩展、可追踪、可并发、可显示过程**的流水线，用户体验从“等结果”变成“看过程”。
+> 目标：证据链路实现“多格式接入 + 后台任务化 + 可追踪进度 + 稳定写库”，为后续 Agent 化提供可复用底座。
 
-### 1.1 数据层改造（为异步与可追踪奠基）
+### 1.1 已完成：数据层与任务模型
 
-建议新增/调整 Prisma 模型（`server/prisma/schema.prisma`）：
+`server/prisma/schema.prisma` 已落地：
+- `Evidence` 增强字段：`ext`、`size`、`sha256`、`text`、`meta`、`processedAt`
+- 新增 `Task` 模型：`type/status/progress/payload/result/error` 及时间戳
+- `User`、`Case` 与 `Task` 关系已建立
 
-1) Evidence 增强（建议字段）
-- `ext`：文件扩展名（`.pdf/.docx/.jpg/...`）
-- `size`：文件大小
-- `sha256`：去重/一致性校验
-- `text`：解析后文本（pdf/docx/ocr 输出）
-- `meta`：JSON（页数、ocr 置信度、解析来源、错误信息等）
-- `processedAt`：解析/识别完成时间
-
-2) 新增 Task/Job 表（最小可用）
-- `id`：任务 ID
-- `userId` / `caseId`
-- `type`：`evidence_parse` / `evidence_analyze` / `case_agent_run` 等
-- `status`：`queued/running/succeeded/failed/canceled`
-- `progress`：0-100
-- `payload`：JSON（evidenceIds 等）
-- `result`：JSON（最终摘要）
-- `error`：失败原因
-- `createdAt/updatedAt`
-
-> 解释：你现在的 `verify` 是同步接口，缺少“中间态”。引入 Task 后，前端可以轮询/订阅进度，后端也能限流与重试。
-
-### 1.2 上传改造（从“只图片”到“多格式证据”）
+### 1.2 已完成：多格式上传与落盘
 
 后端（`server/src/routes/evidence.js`）：
-- 放开文件类型限制：允许 `pdf/docx/txt/jpg/png`（按 `mimetype` + 扩展名双重判断）。
-- **改为流式落盘**：避免 `part.toBuffer()` 对大文件导致内存峰值飙升。
-- 落库时记录 `ext/size/sha256/status=pending`，同时创建 `Task(type=evidence_parse)`。
+- 上传支持 `image/*, pdf, docx, txt`（mimetype + 扩展名校验）
+- 采用流式写入（避免大文件内存峰值）
+- 上传后落库并创建 `evidence_parse` 任务
 
 前端（`client/src/components/evidence/EvidenceUpload.vue`）：
-- `accept` 改为 `image/*,.pdf,.docx,.txt`。
-- 仍保留图片压缩（对 pdf/docx/txt 跳过压缩）。
+- `accept` 已支持 `image/*,.pdf,.docx,.txt`
+- 图片压缩保留，非图片跳过压缩
+- 不支持格式时可提示并正确关闭上传态
 
-### 1.3 文件解析服务（parseToText：PDF/DOCX/OCR/纯文本）
+### 1.3 已完成：解析服务与任务执行
 
-新增服务模块（建议路径：`server/src/services/fileParser.js`）：
-- PDF：`pdf-parse` 提取文本；若文本过短（扫描件），进入 OCR。
-- DOCX：`mammoth`。
-- 图片：`tesseract.js` OCR；OCR 文本过少则可走视觉模型做“场景理解”补充说明（可选）。
-- TXT：直接读取。
-- 并发限制：`p-limit`（建议 2-4 并发）。
+解析服务（`server/src/services/fileParser.js`）：
+- TXT / PDF / DOCX 已支持文本提取（`pdf-parse`、`mammoth`）
+- 图片在 parse 阶段不做 OCR（避免与 analyze 阶段重复调用 LLM）
 
-解析完成后：
-- 更新 Evidence 的 `text/meta/processedAt`
-- 推动下一步 `Task(type=evidence_analyze)`（或让用户点击“认证”再入队）
+任务执行（`server/src/services/taskRunner.js`）：
+- `evidence_parse`：解析后回写 `text/meta/processedAt`
+- `evidence_analyze`：按文件类型分流（图片走视觉认证，文本走文本认证）
+- 批次内单条失败不阻断整体，支持成功/失败计数与状态收敛
 
-### 1.4 异步处理与进度推送（SSE 或 WebSocket）
+### 1.4 已完成：任务查询与 SSE 推送
 
-两种可选方案（建议先做 SSE，复杂度更低）：
+后端已提供：
+- `GET /api/tasks/:id`（任务状态）
+- `GET /api/tasks/:id/stream`（SSE 事件流）
+- 事件类型覆盖：`progress`、`item_done`、`error`、`all_done`
 
-方案 A：SSE（推荐起步）
-- 新增：`GET /api/tasks/:id/stream`（SSE）
-- 后端在解析/ocr/分析每个阶段写事件：`progress`、`item_done`、`error`、`all_done`
-- 前端用 `EventSource` 订阅，实时更新列表 UI
+前端已接入：
+- 认证流程通过 `taskId + SSE` 跟踪任务
+- 列表具备“按文件显示处理中”能力，支持继续加入认证队列
 
-方案 B：WebSocket/Socket.IO
-- 增加 ws 插件，按 `userId` 或 `taskId` 订阅推送
+### 1.5 已完成：认证结果写库策略统一
 
-### 1.5 证据认证流程重构（从“同步 verify”到“后台逐份完成”）
+AI 服务与任务层已统一：
+- 图片与文本认证返回统一结构（`valid/evType/group/verdict/ocrText`）
+- `valid=false` 时强制 `status=invalid`、`group=null`、`ocrText=''`
+- `valid=true` 时写入分类与有效 `ocrText`（仅本案相关信息）
 
-后端：
-- 保留 `POST /api/evidence/verify` 作为“创建任务”的入口：立即返回 `{ taskId }`
-- 后台 worker 分批调用 LLM（避免一次性把大量图片塞进一个请求）
-- 每完成 1 份 evidence：更新 Evidence，并推送进度事件
+### 1.6 阶段一剩余优化项（不阻塞进入阶段二）
 
-前端（`client/src/components/evidence/EvidenceList.vue`）：
-- “认证中…”不再只是按钮 loading，而是：
-  - 每个证据条目显示：排队/解析/ocr/分析/完成/失败
-  - 支持部分完成：已完成的即时进入分组列表
+- 上传后的 `evidence_parse` 任务进度尚未在上传组件中实时展示
+- 认证列表 `onItemDone` 目前以任务结束后的整表刷新为主，逐条即时刷新可继续优化
+- 条目级阶段文案（如 queued/parsing/analyzing）可进一步细化为更明确的状态标签
 
 ---
 
@@ -147,6 +128,49 @@
 - `createdAt/updatedAt`
 
 好处：可断点续跑、可回放、可定位异常、可做“复盘”数据源。
+
+### 2.4 阶段二入口条件（基于当前代码现状）
+
+当前已具备可直接进入阶段二的基础能力：
+- 证据链路已任务化（`Task` + `taskRunner`），可承载 agent 子任务
+- SSE 通道已存在，可复用为 agent 执行进度/事件反馈
+- AI 调用层已统一封装（`llmChat/llmVision`），适合接入工具决策循环
+- 证据结构化写库规则已统一，便于作为工具输入与下游决策依据
+
+建议将阶段二启动门槛定义为：
+- 数据库新增 `AgentRun`（最小字段可先落地）
+- 建立 `server/src/agent/` 目录与最小执行器（runner + tool registry）
+- 打通一个端到端链路：`check_evidence_gap -> notify_user -> 结束`
+
+---
+
+#### 阶段二最小开工清单（建议按顺序）
+
+1) 数据结构
+- 新增 `AgentRun` 表：`id/userId/caseId/status/messages/lastTool/lastResult/error/createdAt/updatedAt`
+- 为 `messages` 约定最小 JSON 结构（system/user/tool/tool_result）
+
+2) 工具注册层
+- 新建 `server/src/agent/tools/index.js`，实现工具白名单与参数校验入口
+- 首批仅实现 2 个工具：`check_evidence_gap`、`notify_user`
+
+3) 执行循环
+- 新建 `server/src/agent/runner.js`：`while + maxSteps + JSON 解析重试`
+- 约定模型输出协议：`{ action, name, args } | { action: "final", content }`
+- 每一步写入 `AgentRun.messages`，失败写 `error` 与 `status=failed`
+
+4) API 与触发
+- 新增 `POST /api/agent/run`（手动触发，入参 `caseId`）
+- 内部创建 `Task(type=case_agent_run)` 并复用现有任务执行/推送机制
+
+5) 前端最小可见性
+- 案件页增加一次性“运行案件助手”入口（可先隐藏在调试开关后）
+- 复用任务流展示运行状态，至少可看到：`queued/running/succeeded/failed`
+
+6) 验收标准（M2 准入）
+- 同一案件可稳定完成 1 次 agent run（<=10 steps）
+- 至少产出 1 条可解释的缺口提示通知（含来源依据）
+- 任一步骤异常不影响系统稳定，且可在 `AgentRun` 中回放定位
 
 ---
 
@@ -209,13 +233,13 @@
 
 ## 5. 里程碑建议（把大改造拆成可交付的最小闭环）
 
-### M0（1 天内）：修阻塞
-- 修复 `llmChat` 的 `chatOpts` 引用错误：`server/src/services/providers/index.js`
+###  M0（1 天内）：修阻塞
+- 已完成：修复 `llmChat` 的 `chatOpts` 引用错误：`server/src/services/providers/index.js`
 
 ### M1（1-2 周）：阶段一最小闭环
-- 多格式上传（pdf/docx/txt/image）
-- evidence 解析入库（`text/meta`）
-- 任务表 + SSE 进度（前端可看到逐份完成）
+- 已完成：多格式上传（pdf/docx/txt/image）
+- 已完成：evidence 解析入库（`text/meta`）
+- 已完成：任务表 + SSE 进度（后端与认证前端已接入；上传解析进度展示可继续优化）
 
 ### M2（2-4 周）：阶段二最小 Agent
 - tools 抽象 + JSON 决策 loop

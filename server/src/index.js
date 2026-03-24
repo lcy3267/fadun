@@ -14,6 +14,8 @@ import authRoutes     from './routes/auth.js'
 import casesRoutes    from './routes/cases.js'
 import evidenceRoutes from './routes/evidence.js'
 import aiRoutes       from './routes/ai.js'
+import taskRoutes     from './routes/tasks.js'
+import { buildTaskRunner } from './services/taskRunner.js'
 
 const app = Fastify({ logger: { level: 'info' } })
 
@@ -21,11 +23,13 @@ await app.register(corsPlugin)
 await app.register(dbPlugin)
 await app.register(jwtPlugin)
 await app.register(staticPlugin)
+app.decorate('taskRunner', buildTaskRunner(app))
 
 await app.register(authRoutes,     { prefix: '/api/auth' })
 await app.register(casesRoutes,    { prefix: '/api/cases' })
 await app.register(evidenceRoutes, { prefix: '/api/evidence' })
 await app.register(aiRoutes,       { prefix: '/api/ai' })
+await app.register(taskRoutes,     { prefix: '/api/tasks' })
 
 app.get('/api/health', async () => ({ ok: true }))
 

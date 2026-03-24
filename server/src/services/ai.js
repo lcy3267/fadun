@@ -4,6 +4,29 @@
  */
 import { llmChat, llmVision } from './providers/index.js'
 
+function parseJsonLoose(text) {
+  const raw = String(text || '').trim()
+  try {
+    return JSON.parse(raw)
+  } catch {
+    // Try to recover first JSON array/object block
+    const arrStart = raw.indexOf('[')
+    const arrEnd = raw.lastIndexOf(']')
+    if (arrStart !== -1 && arrEnd > arrStart) {
+      const sliced = raw.slice(arrStart, arrEnd + 1)
+      try { return JSON.parse(sliced) } catch {}
+    }
+
+    const objStart = raw.indexOf('{')
+    const objEnd = raw.lastIndexOf('}')
+    if (objStart !== -1 && objEnd > objStart) {
+      const sliced = raw.slice(objStart, objEnd + 1)
+      try { return JSON.parse(sliced) } catch {}
+    }
+    throw new Error('AI 返回的内容不是有效 JSON')
+  }
+}
+
 // ── 1. 生成证据分组 + 搜集指引 ──────────────────────
 export async function generateGroups({ type, goal, desc, defendant }) {
   const prompt = `你是一位中国民事诉讼律师助手，正在为当事人制定个性化的证据收集方案。
@@ -25,7 +48,7 @@ export async function generateGroups({ type, goal, desc, defendant }) {
 [{"group":"...","desc":"...","guide":"..."}]`
 
   const text   = await llmChat(prompt, { maxTokens: 1000 })
-  const parsed = JSON.parse(text)
+  const parsed = parseJsonLoose(text)
   return { groups: parsed.map(g => g.group), guide: parsed }
 }
 
@@ -53,11 +76,29 @@ export async function generateAnalysis({ type, goal, desc, defendant }) {
 注意：strength 必须是 0-100 整数；keyPoints 和 risks 各 2-3 条，每条 20 字以内。`
 
   const text = await llmChat(prompt, { maxTokens: 1000 })
-  return JSON.parse(text)
+  return parseJsonLoose(text)
 }
 
 // ── 3. 批量分析证据图片 ─────────────────────────────
 export async function analyzeEvidence({ images, caseInfo }) {
+  return analyzeEvidenceImages({ images, caseInfo })
+}
+
+function normalizeEvidenceResults(parsed, total) {
+  const list = Array.isArray(parsed) ? parsed : []
+  while (list.length < total) {
+    list.push({ valid: false, evType: '其他', group: null, verdict: 'AI 未能分析此图片', ocrText: '' })
+  }
+  return list.slice(0, total).map(item => ({
+    valid: Boolean(item?.valid),
+    evType: item?.evType || '其他',
+    group: item?.group ?? null,
+    verdict: item?.verdict || '',
+    ocrText: item?.valid ? (item?.ocrText || '') : '',
+  }))
+}
+
+export async function analyzeEvidenceImages({ images, caseInfo }) {
   const { type, goal, desc, defendant, groups } = caseInfo
   const prompt = `你是一位专业的中国民事诉讼律师助手，正在帮助当事人分析证据材料。
 
@@ -77,7 +118,7 @@ ${groups.join('、')}
 1) 先判断该图是否为聊天/对话界面截图（如微信、QQ、短信等）。
 2) 若不是聊天截图：按画面内容归入上述分类，给出 valid、evType、group、verdict即可。
 3) 若是聊天截图：根据图中聊天内容判断对本案的证明力。若内容可辨认且与案情、被告相关，则 valid 为 true，正常填写 evType、group、verdict；若无法识别有效内容（模糊、残缺、与案情无关等），则 valid 为 false，group 为 null，verdict 写：「未能识别有效聊天内容，建议滚动截图或补充更多聊天内容」（或等价表述，不超过40字）。
-4) 同时提取每张图片可读文字到 ocrText：仅保留图中能看清的原文；无法识别则返回空字符串。
+4) 仅当该图对本案有效（valid=true）时，提取与本案证明相关的文字到 ocrText；若 valid=false，则 ocrText 必须返回空字符串。
 
 只返回 JSON 数组，禁止返回推理过程，不要有其他文字 ：
 [{"valid":true,"evType":"证据类型简称4字以内","group":"归属分类名称或null","verdict":"对本案证明力具体说明不超过40字","ocrText":"提取出的图片文字，无则空字符串"}]
@@ -85,18 +126,47 @@ ${groups.join('、')}
 注意：数组长度必须等于图片数量（${images.length}）；只返回 JSON。`
 
   const text   = await llmVision(images, prompt, { maxTokens: 2000 })
-  const parsed = JSON.parse(text)
-  while (parsed.length < images.length) {
-    parsed.push({ valid: false, evType: '其他', group: null, verdict: 'AI 未能分析此图片', ocrText: '' })
-  }
+  const parsed = parseJsonLoose(text)
+  return normalizeEvidenceResults(parsed, images.length)
+}
 
-  return parsed.slice(0, images.length).map(item => ({
-    valid: Boolean(item?.valid),
-    evType: item?.evType || '其他',
-    group: item?.group ?? null,
-    verdict: item?.verdict || '',
-    ocrText: item?.ocrText || '',
-  }))
+export async function analyzeEvidenceTexts({ texts, caseInfo }) {
+  const { type, goal, desc, defendant, groups } = caseInfo
+  const textBlocks = (texts || []).map((t, i) => {
+    const normalized = String(t || '').trim()
+    return `【第${i + 1}份文本】\n${normalized || '[空文本]'}`
+  }).join('\n\n')
+  const prompt = `你是一位专业的中国民事诉讼律师助手，正在帮助当事人分析证据文本材料。
+
+【案件信息】
+案件类型：${type}
+维权目的：${goal}
+被告姓名：${defendant.name}
+案情描述：${desc}
+
+【可用证据分类】（每份材料必须归入其中一类，或标记为无关）
+${groups.join('、')}
+
+【待分析文本材料】
+${textBlocks}
+
+【任务】
+以上共 ${texts.length} 份文本证据，请按顺序逐份分析。
+
+分析每份文本时：
+1) 判断与本案及被告是否相关；
+2) 若相关：valid=true，填写 evType/group/verdict；
+3) 若不相关或信息不足：valid=false，group=null，verdict 给出原因；
+4) 仅当 valid=true 时，ocrText 填写对本案证明相关的关键原文；valid=false 时 ocrText 必须为空字符串。
+
+只返回 JSON 数组，禁止返回推理过程，不要有其他文字：
+[{"valid":true,"evType":"证据类型简称4字以内","group":"归属分类名称或null","verdict":"对本案证明力具体说明不超过40字","ocrText":"对本案有效的原文摘录，无则空字符串"}]
+
+注意：数组长度必须等于文本数量（${texts.length}）；只返回 JSON。`
+
+  const text = await llmChat(prompt, { maxTokens: 2000 })
+  const parsed = parseJsonLoose(text)
+  return normalizeEvidenceResults(parsed, texts.length)
 }
 
 // ── 4. 生成维权文书 ─────────────────────────────────
@@ -136,5 +206,5 @@ ${evSummary}
 要求：语言正式，每个 section content 不少于 80 字；建议行动路径给出分步骤的具体建议。`
 
   const text = await llmChat(prompt, { maxTokens: 2000 })
-  return JSON.parse(text)
+  return parseJsonLoose(text)
 }
