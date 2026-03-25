@@ -12,6 +12,7 @@ function serializeCase(c) {
     groups:   JSON.parse(c.groups   || '[]'),
     guide:    JSON.parse(c.guide    || '[]'),
     analysis: c.analysis ? JSON.parse(c.analysis) : null,
+    caseSummary: c.caseSummary ? JSON.parse(c.caseSummary) : null,
     doc:      c.doc      ? JSON.parse(c.doc)      : null,
   }
 }
@@ -81,7 +82,7 @@ export default async function casesRoutes(app) {
     const existing = await app.db.case.findFirst({ where: { id, userId: req.user.userId } })
     if (!existing) return reply.code(404).send({ error: '案件不存在' })
 
-    const { type, goal, desc, groups, guide, analysis, doc, status, plaintiff, defendant } = req.body
+    const { type, goal, desc, groups, guide, analysis, caseSummary, doc, status, plaintiff, defendant } = req.body
 
     const data = {}
     if (type     !== undefined) data.type     = type
@@ -91,6 +92,7 @@ export default async function casesRoutes(app) {
     if (groups   !== undefined) data.groups   = JSON.stringify(groups)
     if (guide    !== undefined) data.guide    = JSON.stringify(guide)
     if (analysis !== undefined) data.analysis = JSON.stringify(analysis)
+    if (caseSummary !== undefined) data.caseSummary = JSON.stringify(caseSummary)
     if (doc      !== undefined) data.doc      = JSON.stringify(doc)
 
     const c = await app.db.case.update({

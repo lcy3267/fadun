@@ -28,6 +28,7 @@ model Case {
   groups      String     @default("[]")     // JSON array of group names
   guide       String     @default("[]")     // JSON array of guide objects
   analysis    String?                        // JSON object
+  caseSummary String?                        // JSON object (evidence-driven summary)
   doc         String?                        // JSON object
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt

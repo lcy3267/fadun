@@ -54,14 +54,29 @@
           <div class="di-ic">⚖️</div>
           <div>
             <div class="di-tn">AI 案情分析</div>
-            <div class="di-td">基于您填写的案情与证据，由 AI 自动生成</div>
+            <div class="di-td">{{ summarySubtitle }}</div>
           </div>
         </div>
-        <div class="dic-toggle">▾</div>
+        <div style="display:flex;align-items:center;gap:8px" @click.stop>
+          <button
+            class="btn btn-g btn-sm"
+            :disabled="summaryLoading || !c?.id"
+            @click="handleGenSummary"
+          >
+            <span
+              v-if="summaryLoading"
+              class="spin"
+              style="border-color:rgba(139,26,26,.3);border-top-color:var(--seal);margin-right:4px"
+            ></span>
+            {{ c?.caseSummary ? '更新案件综述' : '生成案件综述' }}
+          </button>
+          <div class="dic-toggle">▾</div>
+        </div>
       </div>
       <div class="dic-body">
         <div class="dic-inner">
-          <CaseAnalysis :analysis="c.analysis" />
+          <CaseEvidenceSummary v-if="c.caseSummary" :summary="c.caseSummary" />
+          <CaseAnalysis v-else :analysis="c.analysis" />
         </div>
       </div>
     </div>
@@ -146,6 +161,7 @@ import { useToast } from '@/composables/useToast.js'
 import { deleteEvidence, downloadEvidenceZip } from '@/api/evidence.js'
 import BaseModal     from '@/components/ui/BaseModal.vue'
 import CaseAnalysis  from '@/components/analysis/CaseAnalysis.vue'
+import CaseEvidenceSummary from '@/components/analysis/CaseEvidenceSummary.vue'
 import EvidenceGuide from '@/components/evidence/EvidenceGuide.vue'
 import EvidenceList  from '@/components/evidence/EvidenceList.vue'
 import EvidenceUpload from '@/components/evidence/EvidenceUpload.vue'
@@ -158,6 +174,7 @@ const { toast } = useToast()
 const c                = computed(() => store.activeCase)
 const collapsed        = ref(false)
 const analysisCollapsed = ref(false)
+const summaryLoading = ref(false)
 const showGenConfirm = ref(false)
 const showDoc    = ref(false)
 const showDelConfirm = ref(false)
@@ -171,6 +188,15 @@ const previewUrl  = computed(() => {
 
 const ICONS = { '网络侵权':'📱','劳动纠纷':'💼','消费维权':'🛍','合同纠纷':'📝','婚姻家庭':'🏠','人身损害':'🏥','其他':'📁' }
 const validCount = computed(() => (c.value?.evidence || []).filter(e => e.status === 'valid').length)
+const summarySubtitle = computed(() => {
+  if (c.value?.caseSummary?.meta?.generatedAt) {
+    const d = new Date(c.value.caseSummary.meta.generatedAt)
+    const generatedAt = Number.isNaN(d.getTime()) ? '未知时间' : d.toLocaleString('zh-CN')
+    const n = Number(c.value.caseSummary.meta.validEvidenceCount || 0)
+    return `基于 ${n} 份有效证据更新 · ${generatedAt}`
+  }
+  return '基于您填写的案情与证据，由 AI 自动生成'
+})
 
 function genderLabel(g) { return g === 'female' ? '女' : g === 'unknown' ? '不确定' : '男' }
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('zh-CN') : '—' }
@@ -232,6 +258,19 @@ async function handleGenDoc() {
     toast('生成失败：' + e.message)
   } finally {
     genLoading.value = false
+  }
+}
+
+async function handleGenSummary() {
+  if (!c.value?.id) return
+  summaryLoading.value = true
+  try {
+    await store.generateCaseSummary(c.value.id)
+    toast('✅ 案件综述已生成')
+  } catch (e) {
+    toast('综述生成失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
+  } finally {
+    summaryLoading.value = false
   }
 }
 

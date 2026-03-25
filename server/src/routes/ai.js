@@ -1,5 +1,10 @@
-import { requireAuth }                                        from '../middleware/auth.js'
-import { generateGroups, generateAnalysis, generateDocument } from '../services/ai.js'
+import { requireAuth } from '../middleware/auth.js'
+import {
+  generateGroups,
+  generateAnalysis,
+  generateDocument,
+  generateCaseEvidenceSummary,
+} from '../services/ai.js'
 
 export default async function aiRoutes(app) {
   app.addHook('preHandler', requireAuth)
@@ -66,6 +71,52 @@ export default async function aiRoutes(app) {
     } catch (err) {
       app.log.error(err)
       return reply.code(500).send({ error: '文书生成失败，请重试' })
+    }
+  })
+
+  // ── POST /api/ai/case-summary ─────────────────────
+  app.post('/case-summary', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['caseId'],
+        properties: { caseId: { type: 'number' } },
+      },
+    },
+  }, async (req, reply) => {
+    const { caseId } = req.body
+    const c = await app.db.case.findFirst({
+      where: { id: caseId, userId: req.user.userId },
+      include: { plaintiff: true, defendant: true, evidence: true },
+    })
+    if (!c) return reply.code(404).send({ error: '案件不存在' })
+
+    const validEvidence = c.evidence.filter(e => e.status === 'valid')
+    const groups = (() => {
+      try { return JSON.parse(c.groups || '[]') } catch { return [] }
+    })()
+
+    try {
+      const caseSummary = await generateCaseEvidenceSummary({
+        caseData: {
+          type: c.type,
+          goal: c.goal,
+          desc: c.desc,
+          plaintiff: c.plaintiff,
+          defendant: c.defendant,
+          groups,
+        },
+        evidenceList: validEvidence,
+      })
+
+      await app.db.case.update({
+        where: { id: caseId },
+        data: { caseSummary: JSON.stringify(caseSummary) },
+      })
+      return { caseSummary }
+    } catch (err) {
+      app.log.error(err)
+      return reply.code(500).send({ error: '案件综述生成失败，请重试' })
     }
   })
 }

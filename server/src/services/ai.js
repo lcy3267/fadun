@@ -79,6 +79,76 @@ export async function generateAnalysis({ type, goal, desc, defendant }) {
   return parseJsonLoose(text)
 }
 
+function normalizeCaseSummary(parsed, validEvidenceCount) {
+  const data = parsed && typeof parsed === 'object' ? parsed : {}
+  const crossCheck = data.crossCheck && typeof data.crossCheck === 'object' ? data.crossCheck : {}
+  const toList = (v) => Array.isArray(v) ? v.map(x => String(x || '').trim()).filter(Boolean) : []
+  const gaps = Array.isArray(data.evidenceGaps)
+    ? data.evidenceGaps.map((g) => ({
+      title: String(g?.title || '').trim(),
+      detail: String(g?.detail || '').trim(),
+    })).filter((g) => g.title || g.detail)
+    : []
+  const strength = Number.isFinite(Number(data.strength))
+    ? Math.max(0, Math.min(100, Math.round(Number(data.strength))))
+    : 0
+
+  return {
+    factSummary: String(data.factSummary || '').trim(),
+    strength,
+    strengthNote: String(data.strengthNote || '').trim(),
+    crossCheck: {
+      strong: toList(crossCheck.strong),
+      weak: toList(crossCheck.weak),
+    },
+    evidenceGaps: gaps,
+    keyPoints: toList(data.keyPoints),
+    risks: toList(data.risks),
+    suggestion: String(data.suggestion || '').trim(),
+    meta: {
+      generatedAt: new Date().toISOString(),
+      validEvidenceCount,
+    },
+  }
+}
+
+// ── 2.1 生成案件综述（基于当前有效证据）──────────────────
+export async function generateCaseEvidenceSummary({ caseData, evidenceList }) {
+  const { type, goal, desc, plaintiff, defendant, groups = [] } = caseData
+  const safeGroups = Array.isArray(groups) ? groups : []
+  const items = Array.isArray(evidenceList) ? evidenceList : []
+  const MAX_OCR = 500
+  const evLines = items.length
+    ? items.map((e, idx) => {
+      const ocr = String(e.ocrText || '').trim()
+      const shortOcr = ocr.length > MAX_OCR ? `${ocr.slice(0, MAX_OCR)}...` : ocr
+      return [
+        `#${idx + 1}`,
+        `group=${e.group || '未归类'}`,
+        `evType=${e.evType || '其他'}`,
+        `verdict=${e.verdict || '无'}`,
+        `ocrText=${shortOcr || '[空]'}`,
+      ].join(' | ')
+    }).join('\n')
+    : '[当前暂无有效证据]'
+
+  const groupCountMap = new Map()
+  safeGroups.forEach((g) => groupCountMap.set(g, 0))
+  items.forEach((e) => {
+    const g = e.group
+    if (g && groupCountMap.has(g)) groupCountMap.set(g, (groupCountMap.get(g) || 0) + 1)
+  })
+  const groupStats = safeGroups.length
+    ? safeGroups.map((g) => `${g}:${groupCountMap.get(g) || 0}`).join('；')
+    : '未定义证据分组'
+
+  const prompt = `你是一位专业的中国民事诉讼律师助手，请基于案件信息与已认证有效证据，输出结构化“案件综述”。\n\n【案件信息】\n案件类型：${type}\n维权目的：${goal}\n原告：${plaintiff?.name || ''}\n被告：${defendant?.name || ''}（关系：${defendant?.rel || ''}）\n案情描述：${desc}\n\n【证据分组覆盖情况】\n${groupStats}\n\n【有效证据清单】\n${evLines}\n\n【任务要求】\n1) 输出核心事实还原（围绕争议焦点）；\n2) 给出胜诉概率 strength（0-100）及简要依据；\n3) 输出证据互相印证关系：strong（已形成闭环）与 weak（链条薄弱）；\n4) 输出证据缺口 evidenceGaps（title + detail）；\n5) 输出 keyPoints（法律要点）、risks（主要风险）与 suggestion（下一步建议）；\n6) 若有效证据不足，也必须输出可执行的补证建议。\n\n只返回 JSON 对象，禁止返回推理过程，不要有任何其他文字：\n{\n  "factSummary":"核心事实还原，不超过220字",\n  "strength":72,\n  "strengthNote":"评分依据，不超过50字",\n  "crossCheck":{"strong":["..."],"weak":["..."]},\n  "evidenceGaps":[{"title":"缺口标题","detail":"补强建议，不超过80字"}],\n  "keyPoints":["..."],\n  "risks":["..."],\n  "suggestion":"下一步行动建议，不超过120字"\n}`
+
+  const text = await llmChat(prompt, { maxTokens: 2000 })
+  const parsed = parseJsonLoose(text)
+  return normalizeCaseSummary(parsed, items.length)
+}
+
 // ── 3. 批量分析证据图片 ─────────────────────────────
 export async function analyzeEvidence({ images, caseInfo }) {
   return analyzeEvidenceImages({ images, caseInfo })

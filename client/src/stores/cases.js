@@ -73,9 +73,22 @@ export const useCasesStore = defineStore('cases', () => {
     return res
   }
 
+  async function generateCaseSummary(caseId) {
+    const res = await casesApi.aiCaseSummary(caseId)
+    const summary = res?.caseSummary || null
+    if (activeCase.value?.id === caseId) {
+      activeCase.value.caseSummary = summary
+    }
+    const idx = cases.value.findIndex(x => x.id === caseId)
+    if (idx !== -1) {
+      cases.value[idx] = { ...cases.value[idx], caseSummary: summary }
+    }
+    return res
+  }
+
   return {
     cases, activeCase, loading,
     fetchCases, fetchCase, createCase, updateCase, deleteCase,
-    uploadEvidence, deleteEvidence, verifyEvidence, generateDocument,
+    uploadEvidence, deleteEvidence, verifyEvidence, generateDocument, generateCaseSummary,
   }
 })

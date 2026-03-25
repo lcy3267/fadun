@@ -86,6 +86,18 @@ AI 服务与任务层已统一：
 - 认证列表 `onItemDone` 目前以任务结束后的整表刷新为主，逐条即时刷新可继续优化
 - 条目级阶段文案（如 queued/parsing/analyzing）可进一步细化为更明确的状态标签
 
+### 1.7 已新增：案件综述（有效证据驱动）
+
+后端与数据层：
+- `Case` 新增 `caseSummary`（JSON 字符串）用于持久化“基于当前有效证据”的综述快照
+- 新增接口 `POST /api/ai/case-summary`：按 `caseId` 拉取案件与 `status=valid` 证据，调用 LLM 生成综述并写库
+- 综述输出结构覆盖：`factSummary`、`strength`、`strengthNote`、`crossCheck`、`evidenceGaps`、`keyPoints`、`risks`、`suggestion`、`meta`
+
+前端：
+- 案件详情“AI 案情分析”区新增“生成/更新案件综述”按钮
+- 若存在 `caseSummary` 则优先渲染综述；否则回退显示建案时的 `analysis`
+- 综述区展示基于有效证据的动态内容（含缺口提醒与互证/薄弱点）
+
 ---
 
 ## 2. 阶段二：建立 Agent 内核（CaseAgent + Tools + Loop）
