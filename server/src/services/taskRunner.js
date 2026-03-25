@@ -22,9 +22,34 @@ function isImageEvidence(ev) {
   return (ev?.mimetype || '').toLowerCase().startsWith('image/')
 }
 
+const IMAGE_BATCH = 1
+const ANALYZE_UNITS_CONCURRENCY = 3
+
+function buildAnalyzeWorkUnits(rows) {
+  const units = []
+  let imageBuf = []
+  const flushImages = () => {
+    if (!imageBuf.length) return
+    units.push({ kind: 'images', items: [...imageBuf] })
+    imageBuf = []
+  }
+  for (const ev of rows) {
+    if (isImageEvidence(ev)) {
+      imageBuf.push(ev)
+      if (imageBuf.length >= IMAGE_BATCH) flushImages()
+    } else {
+      flushImages()
+      units.push({ kind: 'text', items: [ev] })
+    }
+  }
+  flushImages()
+  return units
+}
+
 export function buildTaskRunner(app) {
   const emitter = new EventEmitter()
   const limit = pLimit(2)
+  const analyzeUnitsLimit = pLimit(ANALYZE_UNITS_CONCURRENCY)
 
   async function patchTask(taskId, data) {
     const task = await app.db.task.update({ where: { id: taskId }, data })
@@ -88,83 +113,120 @@ export function buildTaskRunner(app) {
     let hasValidNew = false
     let successCount = 0
     let failCount = 0
+    let completed = 0
+    const total = rows.length
 
-    for (let i = 0; i < rows.length; i++) {
-      const ev = rows[i]
+    const sharedCaseInfo = {
+      type: caseInfo.type,
+      goal: caseInfo.goal,
+      desc: caseInfo.desc,
+      defendant: { name: caseInfo.defendant?.name || '', rel: caseInfo.defendant?.rel || '' },
+      groups,
+    }
+
+    let finishChain = Promise.resolve()
+    function scheduleFinish(fn) {
+      const run = finishChain.then(() => fn())
+      finishChain = run.catch(() => {})
+      return run
+    }
+
+    function finishEvidence(ev, { ok, r, err }) {
+      return scheduleFinish(async () => {
+        if (ok) {
+          if (r.valid) hasValidNew = true
+          await app.db.evidence.update({
+            where: { id: ev.id },
+            data: {
+              status: r.valid ? 'valid' : 'invalid',
+              evType: r.evType || '其他',
+              group: r.valid ? (r.group || null) : null,
+              verdict: r.verdict || '',
+              ocrText: r.valid ? (r.ocrText || '') : '',
+              aiVerified: true,
+            },
+          })
+          successCount += 1
+        } else {
+          failCount += 1
+          const msg = err?.message || '服务暂不可用'
+          await app.db.evidence.update({
+            where: { id: ev.id },
+            data: {
+              status: 'invalid',
+              evType: ev.evType || '其他',
+              group: null,
+              verdict: `AI 认证失败：${msg}`,
+              ocrText: '',
+              aiVerified: false,
+            },
+          })
+          await publish(task.id, {
+            type: 'item_done',
+            evidenceId: ev.id,
+            step: 'analyze_failed',
+            message: err?.message || String(err),
+          })
+        }
+        completed += 1
+        const progress = Math.max(1, Math.round((completed / total) * 100))
+        await patchTask(task.id, { progress })
+        await publish(task.id, { type: 'item_done', evidenceId: ev.id, step: 'analyze', progress })
+      })
+    }
+
+    async function runImageUnit(items) {
+      try {
+        const images = await Promise.all(
+          items.map(async (ev) => {
+            const fullPath = path.join(UPLOADS_ROOT, ev.filepath || '')
+            const b64 = Buffer.from(await readFile(fullPath)).toString('base64')
+            return { mimetype: ev.mimetype, b64 }
+          }),
+        )
+        const aiResults = await analyzeEvidenceImages({ images, caseInfo: sharedCaseInfo })
+        await Promise.all(
+          items.map((ev, i) => finishEvidence(ev, { ok: true, r: aiResults[i] || {} })),
+        )
+      } catch (err) {
+        await Promise.all(items.map((ev) => finishEvidence(ev, { ok: false, err })))
+      }
+    }
+
+    async function runTextUnit(ev) {
       try {
         const fullPath = path.join(UPLOADS_ROOT, ev.filepath || '')
-        const sharedCaseInfo = {
-          type: caseInfo.type,
-          goal: caseInfo.goal,
-          desc: caseInfo.desc,
-          defendant: { name: caseInfo.defendant?.name || '', rel: caseInfo.defendant?.rel || '' },
-          groups,
-        }
         let parsedText = ev.text || ''
-        let aiResults
-        if (isImageEvidence(ev)) {
-          aiResults = await analyzeEvidenceImages({
-            images: [{ mimetype: ev.mimetype, b64: Buffer.from(await readFile(fullPath)).toString('base64') }],
-            caseInfo: sharedCaseInfo,
-          })
-        } else {
-          if (!parsedText) {
-            const parsed = await parseToText({ fullPath, mimetype: ev.mimetype, ext: ev.ext })
-            parsedText = parsed.text || ''
-            await app.db.evidence.update({
-              where: { id: ev.id },
-              data: {
-                text: parsedText,
-                meta: JSON.stringify(parsed.meta || {}),
-                processedAt: new Date(),
-              },
-            })
-          }
-          aiResults = await analyzeEvidenceTexts({
-            texts: [parsedText],
-            caseInfo: sharedCaseInfo,
+        if (!parsedText) {
+          const parsed = await parseToText({ fullPath, mimetype: ev.mimetype, ext: ev.ext })
+          parsedText = parsed.text || ''
+          await app.db.evidence.update({
+            where: { id: ev.id },
+            data: {
+              text: parsedText,
+              meta: JSON.stringify(parsed.meta || {}),
+              processedAt: new Date(),
+            },
           })
         }
-
+        const aiResults = await analyzeEvidenceTexts({
+          texts: [parsedText],
+          caseInfo: sharedCaseInfo,
+        })
         const r = aiResults[0] || {}
-        if (r.valid) hasValidNew = true
-        await app.db.evidence.update({
-          where: { id: ev.id },
-          data: {
-            status: r.valid ? 'valid' : 'invalid',
-            evType: r.evType || '其他',
-            group: r.valid ? (r.group || null) : null,
-            verdict: r.verdict || '',
-            ocrText: r.valid ? (r.ocrText || '') : '',
-            aiVerified: true,
-          },
-        })
-        successCount += 1
+        await finishEvidence(ev, { ok: true, r })
       } catch (err) {
-        failCount += 1
-        await app.db.evidence.update({
-          where: { id: ev.id },
-          data: {
-            status: 'invalid',
-            evType: ev.evType || '其他',
-            group: null,
-            verdict: `AI 认证失败：${err?.message || '服务暂不可用'}`,
-            ocrText: '',
-            aiVerified: false,
-          },
-        })
-        await publish(task.id, {
-          type: 'item_done',
-          evidenceId: ev.id,
-          step: 'analyze_failed',
-          message: err?.message || String(err),
-        })
+        await finishEvidence(ev, { ok: false, err })
       }
-
-      const progress = Math.max(1, Math.round(((i + 1) / rows.length) * 100))
-      await patchTask(task.id, { progress })
-      await publish(task.id, { type: 'item_done', evidenceId: ev.id, step: 'analyze', progress })
     }
+
+    const units = buildAnalyzeWorkUnits(rows)
+    await Promise.all(
+      units.map((u) =>
+        analyzeUnitsLimit(() => (u.kind === 'images' ? runImageUnit(u.items) : runTextUnit(u.items[0]))),
+      ),
+    )
+    await finishChain
 
     const caseUpdate = { updatedAt: new Date() }
     if (caseInfo.status === 'done' && hasValidNew) caseUpdate.status = 'active'

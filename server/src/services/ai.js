@@ -125,7 +125,8 @@ ${groups.join('、')}
 
 注意：数组长度必须等于图片数量（${images.length}）；只返回 JSON。`
 
-  const text   = await llmVision(images, prompt, { maxTokens: 2000 })
+  const maxTokens = Math.min(6000, 900 + images.length * 1600)
+  const text = await llmVision(images, prompt, { maxTokens })
   const parsed = parseJsonLoose(text)
   return normalizeEvidenceResults(parsed, images.length)
 }

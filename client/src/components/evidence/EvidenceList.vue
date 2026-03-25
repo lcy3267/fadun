@@ -262,7 +262,19 @@ async function handleVerify() {
           finishVerify('证据认证任务已完成')
         }
       },
-      onItemDone: () => {
+      onItemDone: (data) => {
+        const step = data?.step
+        if (step !== 'analyze' && step !== 'analyze_failed') return
+        const eid = data?.evidenceId
+        if (!eid || !props.caseId) return
+        void (async () => {
+          try {
+            await store.fetchCase(props.caseId)
+          } catch {
+            /* 单条刷新失败时仍去掉 loading，避免卡住 */
+          }
+          processingIds.value = processingIds.value.filter(id => id !== eid)
+        })()
       },
       onTaskError: (evt) => {
         es.close()
