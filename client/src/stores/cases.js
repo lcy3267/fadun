@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as casesApi    from '@/api/cases.js'
 import * as evidenceApi from '@/api/evidence.js'
+import * as agentApi    from '@/api/agent.js'
 
 export const useCasesStore = defineStore('cases', () => {
   const cases      = ref([])
@@ -86,9 +87,14 @@ export const useCasesStore = defineStore('cases', () => {
     return res
   }
 
+  async function runCaseAgent(caseId) {
+    const res = await agentApi.runCaseAgent(caseId)
+    return { taskId: res?.taskId }
+  }
+
   return {
     cases, activeCase, loading,
     fetchCases, fetchCase, createCase, updateCase, deleteCase,
-    uploadEvidence, deleteEvidence, verifyEvidence, generateDocument, generateCaseSummary,
+    uploadEvidence, deleteEvidence, verifyEvidence, generateDocument, generateCaseSummary, runCaseAgent,
   }
 })

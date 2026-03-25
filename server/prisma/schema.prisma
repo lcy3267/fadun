@@ -14,6 +14,8 @@ model User {
   createdAt DateTime @default(now())
   cases     Case[]
   tasks     Task[]
+  agentRuns AgentRun[]
+  notifications Notification[]
 }
 
 model Case {
@@ -36,6 +38,8 @@ model Case {
   defendant   Defendant?
   evidence    Evidence[]
   tasks       Task[]
+  agentRuns   AgentRun[]
+  notifications Notification[]
 }
 
 model Plaintiff {
@@ -96,4 +100,33 @@ model Task {
   error     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model AgentRun {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  caseId    Int?
+  case      Case?    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type      String
+  status    String   @default("queued") // queued | running | succeeded | failed | canceled
+  progress  Int      @default(0)
+  messages  String?  // JSON string (array of {role,content} or tool steps)
+  lastTool  String?
+  lastResult String?
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  caseId    Int?
+  case      Case?    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  level     String   @default("info") // info | warn | error
+  message   String
+  meta      String?  // JSON string
+  createdAt DateTime @default(now())
 }

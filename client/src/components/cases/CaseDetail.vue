@@ -70,6 +70,25 @@
             ></span>
             {{ c?.caseSummary ? '更新案件综述' : '生成案件综述' }}
           </button>
+          <button
+            class="btn btn-p btn-sm"
+            :disabled="agentLoading || !c?.id"
+            @click="handleRunCaseAgent"
+          >
+            <span
+              v-if="agentLoading"
+              class="spin"
+              style="border-color:rgba(139,26,26,.3);border-top-color:var(--seal);margin-right:4px"
+            ></span>
+            {{ agentLoading ? '运行中…' : '运行案件助手' }}
+          </button>
+          <button
+            class="btn btn-g btn-sm"
+            :disabled="agentLoading || !c?.id"
+            @click="showAgentRunLog = true"
+          >
+            AI日志
+          </button>
           <div class="dic-toggle">▾</div>
         </div>
       </div>
@@ -141,6 +160,13 @@
       </div>
     </BaseModal>
 
+    <!-- AgentRun Log Modal -->
+    <AgentRunLogModal
+      v-model="showAgentRunLog"
+      :case-id="c?.id"
+      :default-run-id="agentRunLogDefaultRunId"
+    />
+
     <!-- Delete Confirm -->
     <BaseModal v-model="showDelConfirm" title="删除案件">
       <div class="co-ic">⚠️</div>
@@ -166,6 +192,8 @@ import EvidenceGuide from '@/components/evidence/EvidenceGuide.vue'
 import EvidenceList  from '@/components/evidence/EvidenceList.vue'
 import EvidenceUpload from '@/components/evidence/EvidenceUpload.vue'
 import DocViewer     from '@/components/document/DocViewer.vue'
+import { streamTask } from '@/api/tasks.js'
+import AgentRunLogModal from '@/components/agent/AgentRunLogModal.vue'
 
 const emit = defineEmits(['back', 'edit'])
 const store = useCasesStore()
@@ -175,6 +203,9 @@ const c                = computed(() => store.activeCase)
 const collapsed        = ref(false)
 const analysisCollapsed = ref(false)
 const summaryLoading = ref(false)
+const agentLoading = ref(false)
+const showAgentRunLog = ref(false)
+const agentRunLogDefaultRunId = ref(null)
 const showGenConfirm = ref(false)
 const showDoc    = ref(false)
 const showDelConfirm = ref(false)
@@ -271,6 +302,41 @@ async function handleGenSummary() {
     toast('综述生成失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
   } finally {
     summaryLoading.value = false
+  }
+}
+
+async function handleRunCaseAgent() {
+  if (!c.value?.id || agentLoading.value) return
+  agentLoading.value = true
+  try {
+    const { taskId } = await store.runCaseAgent(c.value.id)
+    if (!taskId) throw new Error('未返回 taskId')
+
+    const es = streamTask(taskId, {
+      onProgress: () => {},
+      onTaskError: (evt) => {
+        es.close()
+        agentLoading.value = false
+        toast('案件助手失败：' + (evt?.message || '未知错误'))
+      },
+      onAllDone: (evt) => {
+        es.close()
+        agentLoading.value = false
+        const task = evt?.task
+        const notification = task?.result?.notification
+        const agentRunId = task?.result?.agentRunId || null
+        agentRunLogDefaultRunId.value = agentRunId
+        toast(notification?.message ? `✅ ${notification.message}` : '✅ 案件助手已完成')
+      },
+      onItemDone: () => {},
+      onError: () => {
+        es.close()
+        agentLoading.value = false
+      },
+    })
+  } catch (e) {
+    agentLoading.value = false
+    toast('案件助手启动失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
   }
 }
 

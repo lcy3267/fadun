@@ -9,5 +9,7 @@ export default fp(async function (app) {
   app.register(fstatic, {
     root:   join(__dirname, '../../uploads'),
     prefix: '/uploads/',
+    // Avoid duplicate reply decorator `sendFile` (spa plugin also registers fastify-static)
+    decorateReply: false,
   })
 })

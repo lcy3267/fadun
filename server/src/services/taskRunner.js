@@ -5,6 +5,7 @@ import { readFile } from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { parseToText } from './fileParser.js'
 import { analyzeEvidenceImages, analyzeEvidenceTexts } from './ai.js'
+import { buildAgentRunner } from '../agent/runner.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const UPLOADS_ROOT = path.join(__dirname, '../../uploads')
@@ -50,6 +51,7 @@ export function buildTaskRunner(app) {
   const emitter = new EventEmitter()
   const limit = pLimit(2)
   const analyzeUnitsLimit = pLimit(ANALYZE_UNITS_CONCURRENCY)
+  const agentRunner = buildAgentRunner(app)
 
   async function patchTask(taskId, data) {
     const task = await app.db.task.update({ where: { id: taskId }, data })
@@ -241,11 +243,68 @@ export function buildTaskRunner(app) {
     await publish(task.id, { type: status === 'failed' ? 'task_error' : 'all_done', message: status === 'failed' ? '全部证据认证失败' : undefined })
   }
 
+  async function runCaseAgentTask(task) {
+    const payload = safeParseJson(task.payload, {})
+    const caseId = payload?.caseId || task.caseId
+    const userId = task.userId
+    if (!caseId) throw new Error('caseId required')
+
+    const caseExists = await app.db.case.findFirst({ where: { id: caseId, userId } })
+    if (!caseExists) throw new Error('案件不存在')
+
+    const agentRun = await app.db.agentRun.create({
+      data: {
+        userId,
+        caseId,
+        type: 'case_agent_run',
+        status: 'running',
+        progress: 1,
+        messages: JSON.stringify([]),
+        lastTool: null,
+        lastResult: null,
+        error: null,
+      },
+    })
+
+    await patchTask(task.id, { status: 'running', progress: 1 })
+    const maxSteps = 10
+
+    try {
+      const r = await agentRunner.runCaseAgent({ agentRunId: agentRun.id, userId, caseId, maxSteps })
+
+      const resultObj = {
+        agentRunId: agentRun.id,
+        status: r.status,
+        notification: r.notifyResult,
+        gapResult: r.gapResult,
+      }
+
+      await patchTask(task.id, {
+        status: 'succeeded',
+        progress: 100,
+        result: JSON.stringify(resultObj),
+        error: null,
+      })
+
+      await publish(task.id, { type: 'item_done', step: 'agent_done', agentRunId: agentRun.id })
+      await publish(task.id, { type: 'all_done' })
+    } catch (err) {
+      await patchTask(task.id, {
+        status: 'failed',
+        progress: 100,
+        result: null,
+        error: err?.message || String(err),
+      })
+      await publish(task.id, { type: 'task_error', message: err?.message || String(err) })
+    }
+  }
+
   function enqueue(task) {
     return limit(async () => {
       try {
         if (task.type === 'evidence_parse') return await runParseTask(task)
         if (task.type === 'evidence_analyze') return await runAnalyzeTask(task)
+        if (task.type === 'case_agent_run') return await runCaseAgentTask(task)
         throw new Error(`未知任务类型: ${task.type}`)
       } catch (err) {
         await app.db.task.update({

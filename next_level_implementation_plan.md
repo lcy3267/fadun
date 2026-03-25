@@ -154,6 +154,18 @@ AI 服务与任务层已统一：
 - 建立 `server/src/agent/` 目录与最小执行器（runner + tool registry）
 - 打通一个端到端链路：`check_evidence_gap -> notify_user -> 结束`
 
+> 阶段二首版落地（M2 验收前提）
+>- 已新增数据表：`AgentRun`、`Notification`（用于审计与通知输出）。
+>- 已新增目录：`server/src/agent/`
+  - 工具：`server/src/agent/tools/index.js`（`check_evidence_gap`/`notify_user`）
+  - Runner：`server/src/agent/runner.js`（JSON 决策 loop，maxSteps<=10）
+>- 已接入现有任务体系：
+  - `server/src/services/taskRunner.js` 新增 `case_agent_run` 分支
+  - `server/src/routes/agent.js` + `server/src/index.js` 新增 `POST /api/agent/run`
+>- 前端触发与最小可见性：
+  - `client/src/components/cases/CaseDetail.vue` 增加“运行案件助手”按钮
+  - 使用现有 `streamTask` 订阅 `all_done` 并 toast 通知内容
+
 ---
 
 #### 阶段二最小开工清单（建议按顺序）
