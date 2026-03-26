@@ -38,6 +38,23 @@ function clampText(s, maxLen) {
   return str.slice(0, maxLen) + '...'
 }
 
+function formatEvidencePromptLines(list, ocrClamp = 600) {
+  if (!list?.length) return '[无有效证据]'
+  return list
+    .map((e, idx) => {
+      const ocr = clampText(e.ocrText || '', ocrClamp)
+      return [
+        `#${idx + 1}`,
+        `evidenceId=${e.id}`,
+        `group=${e.group || ''}`,
+        `evType=${e.evType || ''}`,
+        `verdict=${e.verdict || ''}`,
+        `ocrText=${ocr || '[空]'}`,
+      ].join(' | ')
+    })
+    .join('\n')
+}
+
 function isCasualGreeting(message) {
   const s = String(message || '').trim()
   if (!s) return false
@@ -46,19 +63,26 @@ function isCasualGreeting(message) {
 }
 
 function toolDecisionPrompt({ allowedToolNames, uid, cid, userMessage }) {
-  return `你是一名公益律师“案件问答 Agent”，会用工具来补齐证据缺口信息。
+  return `你是一名公益律师“案件问答 Agent”，按需调用工具再回答用户。
 
 你允许使用的工具白名单：
 ${allowedToolNames.map(n => `- ${n}`).join('\n')}
 
-规则：
-1) 若用户问题与“本案证据/补证/证据链缺口/法律诉求怎么用证据证明”强相关，则输出 tool 调用：
+规则（只选其一，只返回一条 JSON）：
+说明：默认不要调用工具，只有在“问题很明确且需要额外拉取事实/证据结构”时才调用。
+
+1) 若用户明确问证据链缺口、还缺什么证据、如何补证、完整性/薄弱环节等，输出：
 {"action":"tool","name":"check_evidence_gap","args":{"userId":${uid},"caseId":${cid}}}
-2) 若用户问题只是闲聊/问候/与案件无关，则输出：
+
+2) 若用户明确要“列出/逐条解释有效证据的内容或证明力”（例如：有效证据有哪些？第X份材料写了什么？哪份证据支持某个主张？），输出：
+{"action":"tool","name":"read_evidence","args":{"userId":${uid},"caseId":${cid}}}
+
+3) 若只是闲聊/问候/与案件无关，输出：
 {"action":"final","mode":"casual"}
-3) 否则输出：
+
+4) 其它与案情/法律相关的问题（无需额外拉取事实细节），输出：
 {"action":"final","mode":"case"}
-3) 只返回 JSON，不要输出任何其他文字。
+5) 只返回 JSON，不要输出任何其它文字。
 
 用户问题：
 ${userMessage}`
@@ -83,16 +107,17 @@ export async function generateCaseChatReply({
     return text
   }
 
-  const { type, goal, desc, plaintiff, defendant, groups } = caseData
-
   const uid = Number(userId)
   const cid = Number(caseId)
   if (!uid || !cid) throw new Error('generateCaseChatReply 缺少 userId/caseId')
 
   const { tools, toolNames } = buildToolRegistry({ app })
-  const allowedToolNames = Array.isArray(toolNames) ? toolNames.filter(n => n === 'check_evidence_gap') : ['check_evidence_gap']
+  const allowedToolNames = Array.isArray(toolNames)
+    ? toolNames.filter(n => n === 'read_evidence' || n === 'check_evidence_gap')
+    : ['read_evidence', 'check_evidence_gap']
 
   let gapResult = null
+  let readResult = null
   let mode = 'case'
   try {
     const decisionPrompt = toolDecisionPrompt({ allowedToolNames, uid, cid, userMessage })
@@ -102,12 +127,15 @@ export async function generateCaseChatReply({
     if (decision?.action === 'tool' && decision?.name === 'check_evidence_gap') {
       gapResult = await tools.check_evidence_gap.run({ userId: uid, caseId: cid })
       mode = 'case'
+    } else if (decision?.action === 'tool' && decision?.name === 'read_evidence') {
+      readResult = await tools.read_evidence.run({ userId: uid, caseId: cid })
+      mode = 'case'
     } else {
       mode = decision?.mode === 'casual' ? 'casual' : 'case'
     }
   } catch {
-    // 决策失败时不阻断对话：降级为“仅基于证据列表直接回答”
     gapResult = null
+    readResult = null
     mode = 'case'
   }
 
@@ -117,6 +145,7 @@ export async function generateCaseChatReply({
 要求：
 1) 用自然中文简短回复，不要提到工具调用或证据缺口
 2) 语气友好，必要时引导用户说明是否需要案件/证据相关帮助
+3) 不要使用 Markdown 列表符号（尤其不要出现 '*' 号）；如要分点用“1/2/3”或中文序号
 最多3句。`
     if (onStreamDelta) {
       let full = ''
@@ -130,22 +159,22 @@ export async function generateCaseChatReply({
     return String(t || '').trim()
   }
 
-  const evidencePrompt = (evidenceList || []).length
-    ? evidenceList
-        .slice(0, 30)
-        .map((e, idx) => {
-          const ocr = clampText(e.ocrText || '', 600)
-          return [
-            `#${idx + 1}`,
-            `evidenceId=${e.id}`,
-            `group=${e.group || ''}`,
-            `evType=${e.evType || ''}`,
-            `verdict=${e.verdict || ''}`,
-            `ocrText=${ocr || '[空]'}`
-          ].join(' | ')
-        })
-        .join('\n')
-    : '[无有效证据]'
+  let type, goal, desc, plaintiff, defendant, groups, evidencePrompt, caseSourceNote
+  if (readResult?.case) {
+    const c = readResult.case
+    type = c.type
+    goal = c.goal
+    desc = c.desc
+    plaintiff = c.plaintiff
+    defendant = c.defendant
+    groups = c.groups
+    evidencePrompt = formatEvidencePromptLines(readResult.validEvidence, 600)
+    caseSourceNote = '（案情与有效证据来自 read_evidence 工具快照）'
+  } else {
+    ;({ type, goal, desc, plaintiff, defendant, groups } = caseData || {})
+    evidencePrompt = formatEvidencePromptLines((evidenceList || []).slice(0, 30), 600)
+    caseSourceNote = '（案情与证据来自会话上下文，与数据库可能略有时间差）'
+  }
 
   const historyPrompt = (history || [])
     .slice(-20)
@@ -172,13 +201,14 @@ ${Array.isArray(gapResult?.suggestion) ? gapResult.suggestion.join('\n') : (gapR
 1) 只依据系统提供的“案件信息 + 已认证有效证据”来回答，不得编造不存在的证据或事实。
 2) 若证据不足以支撑结论，你要明确说明不确定点，并提出需要补充的证据类型/材料清单（尽量具体）。
 3) 以自然语言回答，结构化组织内容：先给结论与建议，再给依据（说明引用了哪些证据的哪类信息），最后给缺口补证与下一步行动建议。
+4) 不要使用 Markdown 列表符号（尤其不要出现 '*' 号）。如需分点用“1/2/3”或中文序号，并用简短段落分隔。
 
-【案件信息】
-案件类型：${type}
-维权目的：${goal}
-案情描述：${desc}
-原告：${plaintiff?.name || ''}（性别/年龄：${plaintiff?.gender || ''} / ${plaintiff?.age || ''}，地区：${plaintiff?.region || ''}）
-被告：${defendant?.name || ''}（与原告关系：${defendant?.rel || ''}）
+【案件信息】${caseSourceNote}
+案件类型：${type || ''}
+维权目的：${goal || ''}
+案情描述：${desc || ''}
+${readResult?.case != null ? `数据库中是否已有「案件综述」字段：${readResult.case.hasCaseSummary ? '是' : '否'}\n` : ''}原告：${plaintiff?.name || ''}（性别/年龄：${plaintiff?.gender || ''} / ${plaintiff?.age || ''}，地区：${plaintiff?.region || ''}）
+被告：${defendant?.name || ''}（与原告关系：${defendant?.rel || ''}${defendant?.huji != null ? `，户籍地：${defendant.huji}` : ''}）
 证据分组清单：${Array.isArray(groups) ? groups.join('、') : ''}
 
 【已认证有效证据（仅参考这些）】
