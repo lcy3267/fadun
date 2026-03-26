@@ -82,13 +82,6 @@
             ></span>
             {{ agentLoading ? '运行中…' : '运行案件助手' }}
           </button>
-          <button
-            class="btn btn-g btn-sm"
-            :disabled="agentLoading || !c?.id"
-            @click="showAgentRunLog = true"
-          >
-            AI日志
-          </button>
           <div class="dic-toggle">▾</div>
         </div>
       </div>
@@ -110,13 +103,33 @@
           :case-id="c.id"
           :evidence="c.evidence || []"
           :groups="c.groups || []"
-          :can-download="c.status === 'done'"
+          :can-download="(c.evidence || []).some((e) => !e?.isDemo)"
           @deleted="onEvDeleted"
           @preview="onEvPreview"
           @download="handleDownloadEvidence"
         />
       </div>
     </div>
+
+    <button
+      type="button"
+      class="case-chat-fab"
+      aria-label="打开公益律师问答"
+      @click="showCaseChatModal = true"
+    >
+      💬
+    </button>
+
+    <BaseModal v-model="showCaseChatModal" title="公益律师问答" :lg="true" content-fill>
+      <div class="case-chat-modal">
+        <CaseChat
+          v-if="c?.id"
+          ref="caseChatRef"
+          :case-id="c.id"
+          hide-header
+        />
+      </div>
+    </BaseModal>
 
     <!-- Generate Doc -->
     <div class="gdz">
@@ -160,13 +173,6 @@
       </div>
     </BaseModal>
 
-    <!-- AgentRun Log Modal -->
-    <AgentRunLogModal
-      v-model="showAgentRunLog"
-      :case-id="c?.id"
-      :default-run-id="agentRunLogDefaultRunId"
-    />
-
     <!-- Delete Confirm -->
     <BaseModal v-model="showDelConfirm" title="删除案件">
       <div class="co-ic">⚠️</div>
@@ -181,7 +187,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useCasesStore } from '@/stores/cases.js'
 import { useToast } from '@/composables/useToast.js'
 import { deleteEvidence, downloadEvidenceZip } from '@/api/evidence.js'
@@ -193,7 +199,7 @@ import EvidenceList  from '@/components/evidence/EvidenceList.vue'
 import EvidenceUpload from '@/components/evidence/EvidenceUpload.vue'
 import DocViewer     from '@/components/document/DocViewer.vue'
 import { streamTask } from '@/api/tasks.js'
-import AgentRunLogModal from '@/components/agent/AgentRunLogModal.vue'
+import CaseChat from '@/components/agent/CaseChat.vue'
 
 const emit = defineEmits(['back', 'edit'])
 const store = useCasesStore()
@@ -204,8 +210,22 @@ const collapsed        = ref(false)
 const analysisCollapsed = ref(false)
 const summaryLoading = ref(false)
 const agentLoading = ref(false)
-const showAgentRunLog = ref(false)
-const agentRunLogDefaultRunId = ref(null)
+const showCaseChatModal = ref(false)
+const caseChatRef = ref(null)
+
+watch(showCaseChatModal, async (open) => {
+  if (!open) return
+  const bump = () => {
+    const inst = caseChatRef.value
+    if (inst?.scrollToBottomSoon) inst.scrollToBottomSoon()
+    else if (inst?.scrollToBottom) inst.scrollToBottom()
+  }
+  await nextTick()
+  bump()
+  requestAnimationFrame(bump)
+  setTimeout(bump, 120)
+  setTimeout(bump, 380)
+})
 const showGenConfirm = ref(false)
 const showDoc    = ref(false)
 const showDelConfirm = ref(false)
@@ -324,8 +344,6 @@ async function handleRunCaseAgent() {
         agentLoading.value = false
         const task = evt?.task
         const notification = task?.result?.notification
-        const agentRunId = task?.result?.agentRunId || null
-        agentRunLogDefaultRunId.value = agentRunId
         toast(notification?.message ? `✅ ${notification.message}` : '✅ 案件助手已完成')
       },
       onItemDone: () => {},
@@ -346,3 +364,40 @@ async function handleDelete() {
   emit('back')
 }
 </script>
+
+<style scoped>
+.case-chat-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 850;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid rgba(139, 26, 26, 0.22);
+  background: linear-gradient(145deg, rgba(139, 26, 26, 0.95), rgba(100, 30, 30, 0.98));
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(13, 10, 6, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.case-chat-fab:hover {
+  transform: scale(1.05);
+  box-shadow: 0 12px 32px rgba(13, 10, 6, 0.34);
+}
+.case-chat-modal {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.case-chat-modal :deep(.case-chat) {
+  border: none;
+  background: transparent;
+}
+</style>

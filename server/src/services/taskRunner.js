@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url'
 import { parseToText } from './fileParser.js'
 import { analyzeEvidenceImages, analyzeEvidenceTexts } from './ai.js'
 import { buildAgentRunner } from '../agent/runner.js'
+import { generateCaseChatReply } from '../agent/chatService.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const UPLOADS_ROOT = path.join(__dirname, '../../uploads')
@@ -299,12 +300,118 @@ export function buildTaskRunner(app) {
     }
   }
 
+  async function runCaseChatTask(task) {
+    const payload = safeParseJson(task.payload, {})
+    const sessionId = payload?.sessionId
+    const caseId = payload?.caseId || task.caseId
+
+    if (!sessionId || !caseId) throw new Error('case_agent_chat 缺少 sessionId/caseId')
+
+    await patchTask(task.id, { status: 'running', progress: 1 })
+
+    try {
+      const session = await app.db.chatSession.findFirst({ where: { id: sessionId, caseId, userId: task.userId } })
+      if (!session) throw new Error('ChatSession 不存在')
+
+      const caseRecord = await app.db.case.findFirst({
+        where: { id: caseId, userId: task.userId },
+        include: { plaintiff: true, defendant: true },
+      })
+      if (!caseRecord) throw new Error('案件不存在')
+
+      const groups = (() => {
+        try { return JSON.parse(caseRecord.groups || '[]') } catch { return [] }
+      })()
+
+      const excludeUserMessageId = payload?.userMessageId ? Number(payload.userMessageId) : null
+
+      const messagesAsc = await app.db.chatMessage.findMany({
+        where: { sessionId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      })
+      const messages = [...messagesAsc]
+        .reverse()
+        .filter(m => !(excludeUserMessageId && Number(m.id) === excludeUserMessageId))
+
+      const evidenceList = await app.db.evidence.findMany({
+        where: { caseId, status: 'valid' },
+        orderBy: { id: 'asc' },
+        take: 30,
+        select: { id: true, group: true, evType: true, verdict: true, ocrText: true },
+      })
+
+      let userMessage = null
+      if (payload?.userMessageId) {
+        const um = await app.db.chatMessage.findFirst({ where: { id: payload.userMessageId, sessionId } })
+        userMessage = um?.content || null
+      }
+
+      const history = messages.map(m => ({ role: m.role, content: m.content }))
+
+      let streamedLen = 0
+      const assistantText = await generateCaseChatReply({
+        app,
+        userId: task.userId,
+        caseId,
+        userMessage: userMessage || '',
+        caseData: {
+          type: caseRecord.type,
+          goal: caseRecord.goal,
+          desc: caseRecord.desc,
+          plaintiff: caseRecord.plaintiff,
+          defendant: caseRecord.defendant,
+          groups,
+        },
+        evidenceList,
+        history,
+        onStreamDelta: (delta) => {
+          const d = String(delta || '')
+          if (!d) return
+          streamedLen += d.length
+          const progress = Math.min(94, 10 + Math.floor(streamedLen / 24))
+          void publish(task.id, {
+            type: 'item_done',
+            step: 'chat_delta',
+            sessionId,
+            delta: d,
+            progress,
+          })
+        },
+      })
+
+      await patchTask(task.id, { progress: 95 })
+
+      const assistantMessage = await app.db.chatMessage.create({
+        data: { sessionId, role: 'assistant', content: assistantText },
+      })
+
+      await patchTask(task.id, {
+        status: 'succeeded',
+        progress: 100,
+        result: JSON.stringify({ sessionId, assistantMessageId: assistantMessage.id, assistantText }),
+        error: null,
+      })
+
+      await publish(task.id, { type: 'all_done' })
+    } catch (err) {
+      await patchTask(task.id, {
+        status: 'failed',
+        progress: 100,
+        result: null,
+        error: err?.message || String(err),
+      })
+      await publish(task.id, { type: 'task_error', message: err?.message || String(err) })
+    }
+  }
+
   function enqueue(task) {
     return limit(async () => {
       try {
         if (task.type === 'evidence_parse') return await runParseTask(task)
         if (task.type === 'evidence_analyze') return await runAnalyzeTask(task)
         if (task.type === 'case_agent_run') return await runCaseAgentTask(task)
+        if (task.type === 'case_agent_chat') return await runCaseChatTask(task)
         throw new Error(`未知任务类型: ${task.type}`)
       } catch (err) {
         await app.db.task.update({

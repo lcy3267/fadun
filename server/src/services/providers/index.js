@@ -104,6 +104,67 @@ export async function llmChat(prompt, opts = {}) {
 }
 
 /**
+ * 流式纯文本对话：依赖 provider 的 chatStream；否则退化为一次性 chat 后整段回调。
+ * @param {string} prompt
+ * @param {Object} opts - { maxTokens, model }
+ * @param {(chunk: string) => void} onDelta
+ */
+export async function llmChatStream(prompt, opts = {}, onDelta) {
+  const providerName = getProviderName()
+  const p = getProvider()
+  const messages = [{ role: 'user', content: prompt }]
+  const meta = resolveMetaForChat(providerName)
+  const chatOpts = { ...opts }
+
+  if (providerName !== 'anthropic' && chatOpts.model === undefined) {
+    const { model } = getOpenAIConfig()
+    chatOpts.model = model
+  }
+
+  let acc = ''
+  const sink = (s) => {
+    if (s == null || s === '') return
+    acc += s
+    onDelta(s)
+  }
+
+  try {
+    await logAiEvent({
+      provider: providerName,
+      model: chatOpts.model,
+      endpoint: meta.endpoint,
+      direction: 'request',
+      payload: { messages, opts, stream: true },
+    })
+
+    if (typeof p.chatStream === 'function') {
+      await p.chatStream(messages, chatOpts, sink)
+    } else {
+      const raw = await p.chat(messages, chatOpts)
+      sink(raw)
+    }
+
+    const trimmed = acc.replace(/```json|```/g, '').trim()
+    await logAiEvent({
+      provider: providerName,
+      model: chatOpts.model,
+      endpoint: meta.endpoint,
+      direction: 'response',
+      payload: { text: trimmed, streaming: true },
+    })
+  } catch (err) {
+    await logAiEvent({
+      provider: providerName,
+      model: chatOpts.model || meta.model,
+      endpoint: meta.endpoint,
+      direction: 'error',
+      payload: { message: err?.message || String(err) },
+    })
+    throw err
+  }
+}
+
+/**
  * 发送带图片的对话（证据分析用）
  * @param {Array}  images   - [{ mimetype, b64 }]
  * @param {string} prompt

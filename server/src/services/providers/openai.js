@@ -65,6 +65,108 @@ function extractAssistantContent(message) {
   return ''
 }
 
+/** OpenAI 流式 chunk 里 choices[0].delta.content：可能是 string 或 content part 数组 */
+function extractStreamDeltaContent(delta) {
+  if (!delta) return ''
+  const c = delta.content
+  if (c == null || c === '') return ''
+  if (typeof c === 'string') return c
+  if (Array.isArray(c)) {
+    return c
+      .map(part => {
+        if (typeof part === 'string') return part
+        if (part?.type === 'text' && part.text != null) return String(part.text)
+        return ''
+      })
+      .join('')
+  }
+  return ''
+}
+
+/**
+ * 流式 chat/completions（OpenAI / OpenRouter / DeepSeek 等兼容接口）
+ * @param {(piece: string) => void} onDelta 每收到一段正文即回调（可能含中文拆开的多个 chunk）
+ */
+export async function chatStream(messages, { maxTokens = 1000, model } = {}, onDelta) {
+  const { apiKey, baseUrl, model: defaultModel } = getConfig()
+  const finalModel = model || defaultModel
+
+  const body = {
+    model: finalModel,
+    max_tokens: maxTokens,
+    messages,
+    stream: true,
+  }
+
+  if (shouldExcludeReasoningFromResponse(baseUrl)) {
+    body.reasoning = { exclude: true }
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  }
+  if (/openrouter\.ai/i.test(baseUrl)) {
+    headers['X-OpenRouter-Title'] = 'fadun'
+  }
+
+  const requestUrl = `${baseUrl}/chat/completions`
+  const res = await fetch(requestUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`OpenAI provider stream error ${res.status}: ${err}`)
+  }
+
+  if (!res.body?.getReader) {
+    const data = await res.json()
+    const message = data.choices?.[0]?.message
+    const text = extractAssistantContent(message)
+    if (text) onDelta(text)
+    return
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  function parseSseLine(line) {
+    const trimmed = String(line).trim()
+    if (!trimmed.startsWith('data:')) return
+    const data = trimmed.slice(5).trim()
+    if (data === '[DONE]') return
+    try {
+      const json = JSON.parse(data)
+      const choice = json.choices?.[0]
+      const delta = choice?.delta
+      const piece = extractStreamDeltaContent(delta)
+      if (piece) onDelta(piece)
+    } catch {
+      // 忽略非 JSON 行（如心跳）
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      parseSseLine(line)
+    }
+  }
+
+  for (const line of buffer.split('\n')) {
+    parseSseLine(line)
+  }
+}
+
 export async function chat(messages, { maxTokens = 1000, model } = {}) {
   const { apiKey, baseUrl, model: defaultModel } = getConfig()
   const finalModel = model || defaultModel

@@ -16,6 +16,7 @@ model User {
   tasks     Task[]
   agentRuns AgentRun[]
   notifications Notification[]
+  chatSessions ChatSession[]
 }
 
 model Case {
@@ -40,6 +41,7 @@ model Case {
   tasks       Task[]
   agentRuns   AgentRun[]
   notifications Notification[]
+  chatSessions ChatSession[]
 }
 
 model Plaintiff {
@@ -127,6 +129,28 @@ model Notification {
   case      Case?    @relation(fields: [caseId], references: [id], onDelete: Cascade)
   level     String   @default("info") // info | warn | error
   message   String
+  meta      String?  // JSON string
+  createdAt DateTime @default(now())
+}
+
+model ChatSession {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  caseId    Int
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  status    String   @default("active") // active | closed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id        Int      @id @default(autoincrement())
+  sessionId Int
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String   // user | assistant | system
+  content   String
   meta      String?  // JSON string
   createdAt DateTime @default(now())
 }

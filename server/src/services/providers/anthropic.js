@@ -30,6 +30,26 @@ export async function chat(messages, { maxTokens = 1000, model = 'default' } = {
 }
 
 /**
+ * @param {(piece: string) => void} onDelta
+ */
+export async function chatStream(messages, { maxTokens = 1000, model = 'default' } = {}, onDelta) {
+  const resolvedModel = MODELS[model] || MODELS.default
+  const stream = getClient().messages.stream({
+    model: resolvedModel,
+    max_tokens: maxTokens,
+    messages,
+  })
+
+  await new Promise((resolve, reject) => {
+    stream.on('text', (t) => {
+      if (t) onDelta(t)
+    })
+    stream.on('error', reject)
+    stream.on('end', resolve)
+  })
+}
+
+/**
  * 图片 block 格式（Anthropic 专用 base64）
  */
 export function imageBlock(mimetype, b64) {
