@@ -30,7 +30,6 @@ from pathlib import Path
 def run(cmd: str, cwd: Path, env=None) -> int:
     print(f"\n>>> {cmd}")
     env = env or os.environ.copy()
-    env.setdefault("NODE_ENV", "production")
     ret = subprocess.run(
         cmd,
         cwd=cwd,
@@ -57,7 +56,7 @@ def main() -> int:
 
     print("正在项目根目录执行部署步骤：", root)
 
-    if run("npm install", root) != 0:
+    if run("npm install --include=dev", root) != 0:
         print("npm install 失败", file=sys.stderr)
         return 1
 
