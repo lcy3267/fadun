@@ -6,3 +6,4 @@ server/src/logs/*
 !server/uploads/.gitkeep
 server/prisma/*.db
 server/prisma/*.db-journal
+package-lock.json
