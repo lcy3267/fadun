@@ -42,3 +42,5 @@ python deploy_production.py
 
 - `NODE_ENV=production node server/src/index.js`
 - 或：`pm2 start ecosystem.config.cjs`（需先 `npm install -g pm2`）
+
+

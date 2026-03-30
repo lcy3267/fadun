@@ -115,7 +115,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import EvidenceItem from './EvidenceItem.vue'
 import { useCasesStore } from '@/stores/cases.js'
 import { useToast } from '@/composables/useToast.js'
@@ -131,6 +131,12 @@ const emit = defineEmits(['deleted', 'preview', 'download', 'verified'])
 
 const store = useCasesStore()
 const { toast } = useToast()
+const MOBILE_MQ = '(max-width: 700px)'
+
+function isMobileEvidenceLayout() {
+  return typeof window !== 'undefined' && window.matchMedia(MOBILE_MQ).matches
+}
+
 const collapsed = reactive({})
 const selectedIds = ref([])
 const KIND_ORDER = ['image', 'docx', 'pdf', 'txt', 'other']
@@ -227,6 +233,36 @@ const groupedEntries = computed(() => {
     }
   })
   return [...map.entries()]
+})
+
+/** 仅随「分组名集合」变化触发，避免 groupedEntries 每次新数组引用导致 watch 狂刷 */
+const groupedEntryKeysSig = computed(() =>
+  groupedEntries.value.map(([g]) => String(g)).join('\0')
+)
+
+function applyMobileDefaultEvgCollapsed() {
+  if (!isMobileEvidenceLayout()) return
+  for (const [group] of groupedEntries.value) {
+    if (!(group in collapsed)) {
+      collapsed[group] = true
+    }
+  }
+}
+
+watch(groupedEntryKeysSig, applyMobileDefaultEvgCollapsed, { immediate: true })
+
+let evgLayoutMq
+function onEvgViewportChange() {
+  if (evgLayoutMq?.matches) applyMobileDefaultEvgCollapsed()
+}
+
+onMounted(() => {
+  evgLayoutMq = window.matchMedia(MOBILE_MQ)
+  evgLayoutMq.addEventListener('change', onEvgViewportChange)
+  onEvgViewportChange()
+})
+onUnmounted(() => {
+  evgLayoutMq?.removeEventListener('change', onEvgViewportChange)
 })
 
 async function handleVerify() {

@@ -12,7 +12,7 @@
             <div class="di-td">创建于 {{ fmtDate(c.createdAt) }} · 更新于 {{ fmtDate(c.updatedAt) }}</div>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px" @click.stop>
+        <div class="dic-hd-acts" @click.stop>
           <span v-if="c.isDemo" class="tag t-demo">示例</span>
           <span class="tag" :class="c.status==='done'?'t-green':'t-red'">{{ c.status==='done'?'✓ 已完结':'● 进行中' }}</span>
           <button class="btn btn-g btn-sm" @click="$emit('edit', c.id)">✏️ 修改案情</button>
@@ -57,7 +57,7 @@
             <div class="di-td">{{ summarySubtitle }}</div>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px" @click.stop>
+        <div class="dic-hd-acts" @click.stop>
           <button
             class="btn btn-g btn-sm"
             :disabled="summaryLoading || !c?.id"
@@ -187,7 +187,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useCasesStore } from '@/stores/cases.js'
 import { useToast } from '@/composables/useToast.js'
 import { deleteEvidence, downloadEvidenceZip } from '@/api/evidence.js'
@@ -205,13 +205,38 @@ const emit = defineEmits(['back', 'edit'])
 const store = useCasesStore()
 const { toast } = useToast()
 
-const c                = computed(() => store.activeCase)
-const collapsed        = ref(false)
-const analysisCollapsed = ref(false)
+const MOBILE_MQ = '(max-width: 700px)'
+
+function initialMobileCardCollapsed() {
+  return typeof window !== 'undefined' && window.matchMedia(MOBILE_MQ).matches
+}
+
+const c                 = computed(() => store.activeCase)
+const collapsed         = ref(initialMobileCardCollapsed())
+const analysisCollapsed = ref(initialMobileCardCollapsed())
 const summaryLoading = ref(false)
 const agentLoading = ref(false)
 const showCaseChatModal = ref(false)
 const caseChatRef = ref(null)
+
+let cardLayoutMq
+function syncCardLayoutToViewport() {
+  if (!cardLayoutMq) return
+  /* 仅宽屏：强制展开，避免窄屏样式下误带收起态；窄屏不碰状态，用户可自由展开/收起 */
+  if (!cardLayoutMq.matches) {
+    collapsed.value = false
+    analysisCollapsed.value = false
+  }
+}
+
+onMounted(() => {
+  cardLayoutMq = window.matchMedia(MOBILE_MQ)
+  syncCardLayoutToViewport()
+  cardLayoutMq.addEventListener('change', syncCardLayoutToViewport)
+})
+onUnmounted(() => {
+  cardLayoutMq?.removeEventListener('change', syncCardLayoutToViewport)
+})
 
 watch(showCaseChatModal, async (open) => {
   if (!open) return
