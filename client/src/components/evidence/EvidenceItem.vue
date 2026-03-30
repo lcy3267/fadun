@@ -10,7 +10,8 @@
     </div>
     <div class="evi-info">
       <div class="evi-n">
-        {{ ev.filename }}
+        <span class="evi-id">#{{ ev.id }}</span>
+        <span class="evi-name" :title="ev.filename">{{ ev.filename }}</span>
         <span v-if="ev.isDemo" class="evi-demo-badge">示例</span>
       </div>
       <div class="evi-tg">{{ isPending ? '⏳ 待认证' : isDraft ? '⚠ 归类待定' : '✅ ' + (ev.evType || '—') }}</div>

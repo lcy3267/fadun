@@ -163,8 +163,9 @@
     <!-- Evidence Preview -->
     <BaseModal v-model="showPreview" title="证据预览" :lg="true">
       <div v-if="previewEv">
-        <div style="margin-bottom:10px;font-size:13px;color:var(--gray2)">
-          {{ previewEv.filename }}
+        <div class="preview-ev-caption">
+          <span class="evi-id">#{{ previewEv.id }}</span>
+          <span class="preview-ev-name">{{ previewEv.filename }}</span>
         </div>
         <div
           v-if="previewEv && isImagePreviewable(previewEv)"
