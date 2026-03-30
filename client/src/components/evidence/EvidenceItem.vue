@@ -1,7 +1,11 @@
 <template>
   <div class="evi" :class="{inv: isDraft}" @click="handlePreview">
     <div class="evi-th">
-      <img v-if="thumbUrl" :src="thumbUrl" alt="" />
+      <EvidenceImage
+        v-if="showImageThumb"
+        :evidence-id="ev.id"
+        alt=""
+      />
       <span v-else>{{ fileIcon }}</span>
     </div>
     <div class="evi-info">
@@ -18,6 +22,8 @@
 
 <script setup>
 import { computed } from 'vue'
+import EvidenceImage from './EvidenceImage.vue'
+import { isImageKind, isImagePreviewable } from '@/utils/evidenceKind.js'
 
 const props = defineProps({
   ev:       { type: Object, required: true },
@@ -26,7 +32,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['delete', 'preview'])
 
-const isImage = computed(() => (props.ev.mimetype || '').startsWith('image/'))
+const isImage = computed(() => isImageKind(props.ev))
+const showImageThumb = computed(() => isImagePreviewable(props.ev))
 const fileIcon = computed(() => {
   const type = (props.ev.mimetype || '').toLowerCase()
   if (type.includes('pdf')) return '📄'
@@ -35,16 +42,8 @@ const fileIcon = computed(() => {
   return '📎'
 })
 
-const thumbUrl = computed(() => {
-  if (!isImage.value) return null
-  if (props.ev.isDemo) return null
-  if (!props.ev.filepath) return null
-  return `/uploads/${props.ev.filepath}`
-})
-
 function handlePreview() {
-  if (!isImage.value) return
-  if (!thumbUrl.value) return
+  if (!isImagePreviewable(props.ev)) return
   emit('preview', props.ev)
 }
 </script>

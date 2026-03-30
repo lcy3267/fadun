@@ -1,8 +1,8 @@
 import { requireAuth }     from '../middleware/auth.js'
 import fmultipart          from '@fastify/multipart'
-import { mkdirSync, unlinkSync, existsSync, createWriteStream } from 'fs'
+import { mkdirSync, unlinkSync, existsSync, createWriteStream, createReadStream, realpathSync } from 'fs'
 import { pipeline } from 'stream/promises'
-import { join, dirname, basename }   from 'path'
+import { join, dirname, basename, sep } from 'path'
 import { createHash } from 'crypto'
 import archiver from 'archiver'
 import { fileURLToPath }   from 'url'
@@ -32,9 +32,55 @@ function isAllowedFile(mimetype, ext) {
   return ALLOWED_MIME.has((mimetype || '').toLowerCase()) || ALLOWED_EXT.has((ext || '').toLowerCase())
 }
 
+/** Resolve file under UPLOADS_ROOT; reject path traversal. */
+function safeUploadPath(relativePath) {
+  if (!relativePath || typeof relativePath !== 'string') return null
+  const full = join(UPLOADS_ROOT, relativePath)
+  if (!existsSync(full)) return null
+  try {
+    const rootReal = realpathSync(UPLOADS_ROOT)
+    const fileReal = realpathSync(full)
+    if (fileReal !== rootReal && !fileReal.startsWith(rootReal + sep)) return null
+    return fileReal
+  } catch {
+    return null
+  }
+}
+
 export default async function evidenceRoutes(app) {
   await app.register(fmultipart, { limits: { fileSize: 20 * 1024 * 1024 } }) // 20MB per file
   app.addHook('preHandler', requireAuth)
+
+  // ── GET /api/evidence/uploads/:evidenceId ───────
+  // 登录用户仅可下载本人案件下的证据文件（不走公开 /uploads 静态目录）
+  app.get('/uploads/:evidenceId', async (req, reply) => {
+    const id = Number(req.params.evidenceId)
+    if (!id) return reply.code(400).send({ error: '缺少证据 ID' })
+
+    const ev = await app.db.evidence.findFirst({
+      where:   { id },
+      include: { case: { select: { userId: true } } },
+    })
+    if (!ev || ev.case.userId !== req.user.userId) {
+      return reply.code(404).send({ error: '证据不存在' })
+    }
+    if (ev.isDemo || !ev.filepath) {
+      return reply.code(404).send({ error: '无可用文件' })
+    }
+
+    const fullPath = safeUploadPath(ev.filepath)
+    if (!fullPath) return reply.code(404).send({ error: '文件不存在' })
+
+    const stream = createReadStream(fullPath)
+    stream.on('error', () => {
+      if (!reply.sent) reply.code(500).send({ error: '读取文件失败' })
+    })
+
+    return reply
+      .type(ev.mimetype || 'application/octet-stream')
+      .header('Cache-Control', 'private, max-age=300')
+      .send(stream)
+  })
 
   // ── POST /api/evidence/upload ────────────────────
   // 仅上传到服务器并落库，标记 caseId；不调用 AI，status=pending, aiVerified=false

@@ -7,7 +7,6 @@ config({ path: join(dirname(fileURLToPath(import.meta.url)), '../../.env') })
 import Fastify        from 'fastify'
 import dbPlugin       from './plugins/db.js'
 import jwtPlugin      from './plugins/jwt.js'
-import staticPlugin   from './plugins/static.js'
 import spaPlugin      from './plugins/spa.js'
 import corsPlugin     from './plugins/cors.js'
 import authRoutes     from './routes/auth.js'
@@ -23,7 +22,6 @@ const app = Fastify({ logger: { level: 'info' } })
 await app.register(corsPlugin)
 await app.register(dbPlugin)
 await app.register(jwtPlugin)
-await app.register(staticPlugin)
 app.decorate('taskRunner', buildTaskRunner(app))
 
 await app.register(authRoutes,     { prefix: '/api/auth' })

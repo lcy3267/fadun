@@ -20,7 +20,11 @@
             >
               <input type="checkbox" :value="ev.id" v-model="selectedIds" :disabled="isProcessing(ev.id)" @click.stop />
               <div class="pending-thumb" style="position:relative" @click.stop="onPendingPreview(ev)">
-                <img v-if="!ev.isDemo && ev.filepath && kind === 'image'" :src="`/uploads/${ev.filepath}`" alt="" />
+                <EvidenceImage
+                  v-if="kind === 'image' && isImagePreviewable(ev)"
+                  :evidence-id="ev.id"
+                  alt=""
+                />
                 <span v-else>{{ kindIcon(kind) }}</span>
                 <div
                   v-if="isProcessing(ev.id)"
@@ -117,6 +121,8 @@
 <script setup>
 import { computed, reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import EvidenceItem from './EvidenceItem.vue'
+import EvidenceImage from './EvidenceImage.vue'
+import { isImageKind, isImagePreviewable } from '@/utils/evidenceKind.js'
 import { useCasesStore } from '@/stores/cases.js'
 import { useToast } from '@/composables/useToast.js'
 import { streamTask } from '@/api/tasks.js'
@@ -165,15 +171,14 @@ function toggleSelectAll() {
 }
 
 function onPendingPreview(ev) {
-  if (!(ev.mimetype || '').startsWith('image/')) return
-  if (ev.isDemo || !ev.filepath) return
+  if (!isImagePreviewable(ev)) return
   emit('preview', ev)
 }
 
 function getFileKind(ev) {
   const mime = (ev?.mimetype || '').toLowerCase()
   const ext = (ev?.ext || '').toLowerCase()
-  if (mime.startsWith('image/')) return 'image'
+  if (isImageKind(ev)) return 'image'
   if (mime.includes('pdf') || ext === '.pdf') return 'pdf'
   if (mime.includes('word') || mime.includes('document') || ext === '.docx' || ext === '.doc') return 'docx'
   if (mime.startsWith('text/') || ext === '.txt') return 'txt'

@@ -166,8 +166,15 @@
         <div style="margin-bottom:10px;font-size:13px;color:var(--gray2)">
           {{ previewEv.filename }}
         </div>
-        <div v-if="previewUrl" style="text-align:center">
-          <img :src="previewUrl" alt="" style="max-width:100%;max-height:70vh;border-radius:8px;box-shadow:var(--sh2)" />
+        <div
+          v-if="previewEv && isImagePreviewable(previewEv)"
+          style="text-align:center"
+        >
+          <EvidenceImage
+            :evidence-id="previewEv.id"
+            alt=""
+            style="max-width:100%;max-height:70vh;border-radius:8px;box-shadow:var(--sh2)"
+          />
         </div>
         <div v-else style="font-size:13px;color:var(--gray2)">暂不支持预览此类型文件</div>
       </div>
@@ -197,9 +204,11 @@ import CaseEvidenceSummary from '@/components/analysis/CaseEvidenceSummary.vue'
 import EvidenceGuide from '@/components/evidence/EvidenceGuide.vue'
 import EvidenceList  from '@/components/evidence/EvidenceList.vue'
 import EvidenceUpload from '@/components/evidence/EvidenceUpload.vue'
+import EvidenceImage from '@/components/evidence/EvidenceImage.vue'
 import DocViewer     from '@/components/document/DocViewer.vue'
 import { streamTask } from '@/api/tasks.js'
 import CaseChat from '@/components/agent/CaseChat.vue'
+import { isImagePreviewable } from '@/utils/evidenceKind.js'
 
 const emit = defineEmits(['back', 'edit'])
 const store = useCasesStore()
@@ -257,10 +266,6 @@ const showDelConfirm = ref(false)
 const genLoading = ref(false)
 const showPreview = ref(false)
 const previewEv   = ref(null)
-const previewUrl  = computed(() => {
-  if (!previewEv.value || previewEv.value.isDemo || !previewEv.value.filepath) return ''
-  return `/uploads/${previewEv.value.filepath}`
-})
 
 const ICONS = { '网络侵权':'📱','劳动纠纷':'💼','消费维权':'🛍','合同纠纷':'📝','婚姻家庭':'🏠','人身损害':'🏥','其他':'📁' }
 const validCount = computed(() => (c.value?.evidence || []).filter(e => e.status === 'valid').length)

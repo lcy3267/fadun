@@ -1,6 +1,10 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api', timeout: 60000 })
+/** 与 Vite 前端同源时用 `/api`；前后端分域时在 `.env` 中设置 `VITE_API_BASE`（如 `https://api.example.com/api`） */
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE || '/api',
+  timeout: 60000,
+})
 
 api.interceptors.request.use(cfg => {
   const token = localStorage.getItem('fd_token')
