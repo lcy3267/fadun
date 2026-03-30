@@ -133,12 +133,3 @@ npm run dev
 - 生产构建：`npm run build`（构建前端资源，由服务端 SPA 插件托管）。
 
 ---
-
-## Prompt 与 AI 代码位置
-
-| 区域 | 路径 |
-|------|------|
-| 案情分组、分析、证据认证、案件综述、文书等 | [`server/src/services/ai.js`](server/src/services/ai.js) |
-| LLM 调用与流式 | [`server/src/services/providers/`](server/src/services/providers/) |
-| 聊天意图与回答模板 | [`server/src/agent/chatService.js`](server/src/agent/chatService.js) |
-| Agent 工具与固定协议循环 | [`server/src/agent/tools/index.js`](server/src/agent/tools/index.js)、[`server/src/agent/runner.js`](server/src/agent/runner.js) |
