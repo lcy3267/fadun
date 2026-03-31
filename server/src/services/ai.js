@@ -3,6 +3,7 @@
  * 底层 provider 通过 providers/index.js 切换，此文件只关心业务逻辑。
  */
 import { llmChat, llmVision } from './providers/index.js'
+import { primaryEvidenceBody } from './evidenceContent.js'
 
 function parseJsonLoose(text) {
   const raw = String(text || '').trim()
@@ -120,14 +121,14 @@ export async function generateCaseEvidenceSummary({ caseData, evidenceList }) {
   const MAX_OCR = 500
   const evLines = items.length
     ? items.map((e, idx) => {
-      const ocr = String(e.ocrText || '').trim()
-      const shortOcr = ocr.length > MAX_OCR ? `${ocr.slice(0, MAX_OCR)}...` : ocr
+      const body = primaryEvidenceBody(e)
+      const shortBody = body.length > MAX_OCR ? `${body.slice(0, MAX_OCR)}...` : body
       return [
         `#${idx + 1}`,
         `group=${e.group || '未归类'}`,
         `evType=${e.evType || '其他'}`,
         `verdict=${e.verdict || '无'}`,
-        `ocrText=${shortOcr || '[空]'}`,
+        `content=${shortBody || '[空]'}`,
       ].join(' | ')
     }).join('\n')
     : '[当前暂无有效证据]'
@@ -154,18 +155,28 @@ export async function analyzeEvidence({ images, caseInfo }) {
   return analyzeEvidenceImages({ images, caseInfo })
 }
 
-function normalizeEvidenceResults(parsed, total) {
+function trimStr(v) {
+  return String(v ?? '').trim()
+}
+
+function normalizeEvidenceResults(parsed, total, opts = {}) {
+  const textJsonFallback = opts.textJsonFallback === true
   const list = Array.isArray(parsed) ? parsed : []
   while (list.length < total) {
     list.push({ valid: false, evType: '其他', group: null, verdict: 'AI 未能分析此图片', ocrText: '' })
   }
-  return list.slice(0, total).map(item => ({
-    valid: Boolean(item?.valid),
-    evType: item?.evType || '其他',
-    group: item?.group ?? null,
-    verdict: item?.verdict || '',
-    ocrText: item?.valid ? (item?.ocrText || '') : '',
-  }))
+  return list.slice(0, total).map(item => {
+    const ocr = trimStr(item?.ocrText)
+    const alt = textJsonFallback ? trimStr(item?.text) : ''
+    const merged = item?.valid ? (ocr || alt) : ''
+    return {
+      valid: Boolean(item?.valid),
+      evType: item?.evType || '其他',
+      group: item?.group ?? null,
+      verdict: item?.verdict || '',
+      ocrText: merged,
+    }
+  })
 }
 
 export async function analyzeEvidenceImages({ images, caseInfo }) {
@@ -237,7 +248,7 @@ ${textBlocks}
 
   const text = await llmChat(prompt, { maxTokens: 2000 })
   const parsed = parseJsonLoose(text)
-  return normalizeEvidenceResults(parsed, texts.length)
+  return normalizeEvidenceResults(parsed, texts.length, { textJsonFallback: true })
 }
 
 // ── 4. 生成维权文书 ─────────────────────────────────

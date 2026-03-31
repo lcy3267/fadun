@@ -23,7 +23,8 @@
     "mammoth": "^1.12.0",
     "p-limit": "^7.3.0",
     "pdf-parse": "^2.4.5",
-    "prisma": "^6.4.1"
+    "prisma": "^6.4.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "dotenv-cli": "^8.0.0"

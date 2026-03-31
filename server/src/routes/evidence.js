@@ -12,6 +12,7 @@ const UPLOADS_ROOT = join(__dirname, '../../uploads')
 const ALLOWED_MIME = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'text/plain',
   'image/jpeg',
   'image/png',
@@ -19,7 +20,7 @@ const ALLOWED_MIME = new Set([
   'image/heic',
   'image/heif',
 ])
-const ALLOWED_EXT = new Set(['.pdf', '.docx', '.txt', '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'])
+const ALLOWED_EXT = new Set(['.pdf', '.docx', '.xlsx', '.txt', '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'])
 
 function splitName(name = '') {
   const normalized = (name || '').trim()
@@ -160,7 +161,7 @@ export default async function evidenceRoutes(app) {
     if (!caseId) return reply.code(400).send({ error: '缺少 caseId' })
 
     if (!created.length) {
-      return reply.code(400).send({ error: '文件格式不支持（仅支持 jpg/png/webp/pdf/docx/txt）' })
+      return reply.code(400).send({ error: '文件格式不支持（仅支持 jpg/png/webp/pdf/docx/xlsx/txt）' })
     }
 
     const parseTask = await app.db.task.create({

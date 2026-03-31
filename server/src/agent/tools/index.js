@@ -4,6 +4,7 @@
  * - 输出必须可 JSON 序列化，供 runner 写入 AgentRun messages
  */
 import { generateCaseEvidenceSummary } from '../../services/ai.js'
+import { primaryEvidenceBody } from '../../services/evidenceContent.js'
 
 function toTrimmedString(v) {
   return typeof v === 'string' ? v.trim() : ''
@@ -64,6 +65,8 @@ export function buildToolRegistry({ app }) {
         group: true,
         evType: true,
         verdict: true,
+        mimetype: true,
+        text: true,
         ocrText: true,
       },
     })
@@ -73,7 +76,7 @@ export function buildToolRegistry({ app }) {
       group: e.group,
       evType: e.evType,
       verdict: e.verdict,
-      ocrText: clampEvidenceOcr(e.ocrText),
+      ocrText: clampEvidenceOcr(primaryEvidenceBody(e)),
     }))
 
     return {
@@ -142,6 +145,8 @@ export function buildToolRegistry({ app }) {
         group: e.group,
         evType: e.evType,
         verdict: e.verdict,
+        mimetype: e.mimetype,
+        text: e.text,
         ocrText: e.ocrText,
       })),
     })

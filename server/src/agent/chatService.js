@@ -7,6 +7,8 @@
  */
 import { llmChat, llmChatStream } from '../services/providers/index.js'
 import { buildToolRegistry } from './tools/index.js'
+import { retrieveEvidenceChunks } from '../services/rag/evidenceRetrieve.js'
+import { primaryEvidenceBody } from '../services/evidenceContent.js'
 
 function parseJsonLoose(text) {
   const raw = String(text || '').trim()
@@ -42,14 +44,32 @@ function formatEvidencePromptLines(list, ocrClamp = 600) {
   if (!list?.length) return '[无有效证据]'
   return list
     .map((e, idx) => {
-      const ocr = clampText(e.ocrText || '', ocrClamp)
+      const body = clampText(primaryEvidenceBody(e), ocrClamp)
       return [
         `#${idx + 1}`,
         `evidenceId=${e.id}`,
         `group=${e.group || ''}`,
         `evType=${e.evType || ''}`,
         `verdict=${e.verdict || ''}`,
-        `ocrText=${ocr || '[空]'}`,
+        `content=${body || '[空]'}`,
+      ].join(' | ')
+    })
+    .join('\n')
+}
+
+function formatRetrievedEvidencePromptLines(chunks, excerptClamp = 500) {
+  if (!Array.isArray(chunks) || !chunks.length) return '[无检索到的证据片段]'
+  return chunks
+    .map((c, idx) => {
+      const excerpt = clampText(c.text || '', excerptClamp)
+      return [
+        `检索片段#${idx + 1}`,
+        `evidenceId=${c.evidenceId}`,
+        `group=${c.group || ''}`,
+        `evType=${c.evType || ''}`,
+        `verdict=${c.verdict || ''}`,
+        `chunkIndex=${c.chunkIndex ?? ''}`,
+        `excerpt=${excerpt || '[空]'}`,
       ].join(' | ')
     })
     .join('\n')
@@ -168,8 +188,22 @@ export async function generateCaseChatReply({
     plaintiff = c.plaintiff
     defendant = c.defendant
     groups = c.groups
-    evidencePrompt = formatEvidencePromptLines(readResult.validEvidence, 600)
-    caseSourceNote = '（案情与有效证据来自 read_evidence 工具快照）'
+    // 尝试向量检索优先：根据用户问题从已认证有效证据里取相关片段
+    try {
+      const retrieved = await retrieveEvidenceChunks({
+        app,
+        userId: uid,
+        caseId: cid,
+        query: String(userMessage || ''),
+        topK: 12,
+      })
+      evidencePrompt = formatRetrievedEvidencePromptLines(retrieved, 500)
+      caseSourceNote = '（证据片段来自向量检索（基于已认证有效证据））'
+    } catch {
+      // 兜底：保持原逻辑可用
+      evidencePrompt = formatEvidencePromptLines(readResult.validEvidence, 600)
+      caseSourceNote = '（案情与有效证据来自 read_evidence 工具快照）'
+    }
   } else {
     ;({ type, goal, desc, plaintiff, defendant, groups } = caseData || {})
     evidencePrompt = formatEvidencePromptLines((evidenceList || []).slice(0, 30), 600)

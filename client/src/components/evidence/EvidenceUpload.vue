@@ -10,9 +10,9 @@
     >
       <div class="upl-ic">📤</div>
       <div class="upl-t"><strong>点击或拖拽</strong>上传证据截图</div>
-      <div class="upl-s">支持 JPG/PNG/PDF/DOCX/TXT · 支持多选 · 上传后后台自动解析</div>
+      <div class="upl-s">支持 JPG/PNG/PDF/DOCX/TXT/XLSX · 支持多选 · 上传后后台自动解析</div>
     </div>
-    <input ref="fileInput" type="file" multiple accept="image/*,.pdf,.docx,.txt" style="display:none" @change="onFiles" />
+    <input ref="fileInput" type="file" multiple accept="image/*,.pdf,.docx,.txt,.xlsx" style="display:none" @change="onFiles" />
 
     <!-- Progress -->
     <div v-if="uploading" class="ev-progress">

@@ -5,6 +5,7 @@ import { readFile } from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { parseToText } from './fileParser.js'
 import { analyzeEvidenceImages, analyzeEvidenceTexts } from './ai.js'
+import { buildEvidenceIndexForCase } from './rag/evidenceIndex.js'
 import { buildAgentRunner } from '../agent/runner.js'
 import { generateCaseChatReply } from '../agent/chatService.js'
 
@@ -242,6 +243,46 @@ export function buildTaskRunner(app) {
       error: status === 'failed' ? '全部证据认证失败' : (failCount > 0 ? `部分失败：${failCount} 条` : null),
     })
     await publish(task.id, { type: status === 'failed' ? 'task_error' : 'all_done', message: status === 'failed' ? '全部证据认证失败' : undefined })
+
+    // 仅在分析成功后（至少有部分证据分析成功）刷新当前案件向量索引
+    if (status === 'succeeded') {
+      const ragTask = await app.db.task.create({
+        data: {
+          userId: task.userId,
+          caseId,
+          type: 'evidence_rag_index',
+          status: 'queued',
+          progress: 0,
+          payload: JSON.stringify({ caseId }),
+        },
+      })
+      // 放到队列里异步执行，不阻塞当前分析任务
+      void enqueue(ragTask).catch(() => {})
+    }
+  }
+
+  async function runEvidenceRagIndexTask(task) {
+    const payload = safeParseJson(task.payload, {})
+    const caseId = payload?.caseId || task.caseId
+    const userId = task.userId
+    if (!caseId) throw new Error('caseId required')
+
+    const caseExists = await app.db.case.findFirst({
+      where: { id: caseId, userId },
+      select: { id: true },
+    })
+    if (!caseExists) throw new Error('案件不存在')
+
+    await patchTask(task.id, { status: 'running', progress: 1 })
+    const res = await buildEvidenceIndexForCase({ app, caseId })
+
+    await patchTask(task.id, {
+      status: 'succeeded',
+      progress: 100,
+      result: JSON.stringify({ ...res }),
+      error: null,
+    })
+    await publish(task.id, { type: 'all_done' })
   }
 
   async function runCaseAgentTask(task) {
@@ -338,7 +379,15 @@ export function buildTaskRunner(app) {
         where: { caseId, status: 'valid' },
         orderBy: { id: 'asc' },
         take: 30,
-        select: { id: true, group: true, evType: true, verdict: true, ocrText: true },
+        select: {
+          id: true,
+          group: true,
+          evType: true,
+          verdict: true,
+          mimetype: true,
+          text: true,
+          ocrText: true,
+        },
       })
 
       let userMessage = null
@@ -410,6 +459,7 @@ export function buildTaskRunner(app) {
       try {
         if (task.type === 'evidence_parse') return await runParseTask(task)
         if (task.type === 'evidence_analyze') return await runAnalyzeTask(task)
+        if (task.type === 'evidence_rag_index') return await runEvidenceRagIndexTask(task)
         if (task.type === 'case_agent_run') return await runCaseAgentTask(task)
         if (task.type === 'case_agent_chat') return await runCaseChatTask(task)
         throw new Error(`未知任务类型: ${task.type}`)

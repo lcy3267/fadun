@@ -16,7 +16,8 @@ export default fp(async function spaPlugin(app) {
   app.register(fstatic, {
     root: clientDist,
     prefix: '/',
-    index: true,
+    // @fastify/static v8 的 index 选项需要是字符串数组或 false
+    index: ['index.html'],
   })
 
   app.setNotFoundHandler((request, reply) => {
