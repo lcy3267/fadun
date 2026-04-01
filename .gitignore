@@ -1,11 +1,43 @@
+# Dependencies & build
 node_modules/
 dist/
+client/dist/
+
+# Secrets & local env
 .env
-server/uploads/*
-server/src/logs/*
-!server/uploads/.gitkeep
+.env.local
+.env.*.local
+
+# Logs (any location)
+*.log
+logs/
+server/src/logs/
+
+# SQLite (Prisma / local dev)
 server/prisma/*.db
 server/prisma/*.db-journal
-logs/
+server/prisma/*.db-shm
+server/prisma/*.db-wal
+# 若 DATABASE_URL 指向 server 根目录下的 db，一并忽略
+server/*.db
+server/*.db-journal
+
+# Runtime uploads & generated RAG index (do not commit user data / vectors)
+server/uploads/*
+!server/uploads/.gitkeep
+server/.rag/
 server/data/
-package-lock.json
+
+# OS & editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Optional tooling
+coverage/
+*.tsbuildinfo
+.turbo/
+
+# Keep lockfile in repo for reproducible installs — do not ignore package-lock.json
