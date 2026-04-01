@@ -63,6 +63,23 @@ export const useCasesStore = defineStore('cases', () => {
     return { taskId: res?.taskId }
   }
 
+  async function runPublicEvidenceFetch(payload) {
+    const res = await evidenceApi.publicFetchEvidence(payload)
+    return { taskId: res?.taskId }
+  }
+
+  async function confirmPublicEvidence(caseId, evidenceIds) {
+    const res = await evidenceApi.confirmPublicEvidence(evidenceIds)
+    if (activeCase.value?.id === caseId) await fetchCase(caseId)
+    return res
+  }
+
+  async function rejectPublicEvidence(caseId, evidenceIds) {
+    const res = await evidenceApi.rejectPublicEvidence(evidenceIds)
+    if (activeCase.value?.id === caseId) await fetchCase(caseId)
+    return res
+  }
+
   async function generateDocument(caseId) {
     const res = await casesApi.aiDocument(caseId)
     if (activeCase.value?.id === caseId) {
@@ -95,6 +112,8 @@ export const useCasesStore = defineStore('cases', () => {
   return {
     cases, activeCase, loading,
     fetchCases, fetchCase, createCase, updateCase, deleteCase,
-    uploadEvidence, deleteEvidence, verifyEvidence, generateDocument, generateCaseSummary, runCaseAgent,
+    uploadEvidence, deleteEvidence, verifyEvidence, runPublicEvidenceFetch,
+    confirmPublicEvidence, rejectPublicEvidence,
+    generateDocument, generateCaseSummary, runCaseAgent,
   }
 })

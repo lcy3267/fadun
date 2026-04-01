@@ -1,5 +1,41 @@
 <template>
   <div>
+    <div v-if="publicCandidates.length" class="pending-section">
+      <div class="pending-hd">
+        <span class="evs-t">公开抓取候选 {{ publicCandidates.length }} 条</span>
+      </div>
+      <div class="pending-list">
+        <label
+          v-for="ev in publicCandidates"
+          :key="`pub-${ev.id}`"
+          class="pending-item"
+          :class="{ selected: selectedPublicIds.includes(ev.id) }"
+          style="width:100%;max-width:none;display:flex;align-items:flex-start;gap:8px;padding:10px;border:1px solid var(--bdr);border-radius:10px;background:#fff;"
+        >
+          <input type="checkbox" :value="ev.id" v-model="selectedPublicIds" />
+          <div style="min-width:0;flex:1">
+            <div style="font-weight:600;font-size:13px;line-height:1.5">{{ ev.filename || '公开证据' }}</div>
+            <div style="font-size:12px;color:var(--gray2);margin-top:4px">{{ ev.text || ev.verdict || '' }}</div>
+            <a
+              v-if="ev.sourceUrl"
+              :href="ev.sourceUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              style="display:inline-block;margin-top:6px;font-size:12px;color:var(--seal)"
+            >来源链接</a>
+          </div>
+        </label>
+      </div>
+      <div class="pending-actions">
+        <button class="btn btn-p btn-sm" :disabled="!selectedPublicIds.length" @click="handleConfirmPublic">
+          确认入证（{{ selectedPublicIds.length }}）
+        </button>
+        <button class="btn btn-danger btn-sm" :disabled="!selectedPublicIds.length" @click="handleRejectPublic">
+          驳回（{{ selectedPublicIds.length }}）
+        </button>
+      </div>
+    </div>
+
     <!-- 待认证：仅缩略图 + 复选框，无文字说明；支持全选 -->
     <div v-if="pendingEvidence.length" class="pending-section">
       <div class="pending-hd">
@@ -145,15 +181,19 @@ function isMobileEvidenceLayout() {
 
 const collapsed = reactive({})
 const selectedIds = ref([])
+const selectedPublicIds = ref([])
 const KIND_ORDER = ['image', 'docx', 'pdf', 'txt', 'other']
 const processingIds = ref([])
 const activeTaskCount = ref(0)
 
 // 待认证：未 AI 识别的（aiVerified 为 false 或 status 为 pending）
 const pendingEvidence = computed(() =>
-  props.evidence.filter(e => !e.aiVerified || e.status === 'pending')
+  props.evidence.filter(e => (!e.aiVerified || e.status === 'pending') && e.sourceType !== 'public_fetch')
 )
 const pendingByKind = computed(() => groupByKind(pendingEvidence.value))
+const publicCandidates = computed(() =>
+  props.evidence.filter(e => e.sourceType === 'public_fetch' && e.reviewStatus === 'pending_review')
+)
 
 const isAllPendingSelected = computed(() => {
   const pending = pendingEvidence.value
@@ -353,5 +393,27 @@ async function handleDeleteSelected() {
 
 function isProcessing(id) {
   return processingIds.value.includes(id)
+}
+
+async function handleConfirmPublic() {
+  if (!selectedPublicIds.value.length || !props.caseId) return
+  try {
+    await store.confirmPublicEvidence(props.caseId, selectedPublicIds.value)
+    toast(`已确认 ${selectedPublicIds.value.length} 条公开证据`)
+    selectedPublicIds.value = []
+  } catch (e) {
+    toast('确认失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
+  }
+}
+
+async function handleRejectPublic() {
+  if (!selectedPublicIds.value.length || !props.caseId) return
+  try {
+    await store.rejectPublicEvidence(props.caseId, selectedPublicIds.value)
+    toast(`已驳回 ${selectedPublicIds.value.length} 条公开证据`)
+    selectedPublicIds.value = []
+  } catch (e) {
+    toast('驳回失败：' + (e?.response?.data?.error || e?.message || '未知错误'))
+  }
 }
 </script>

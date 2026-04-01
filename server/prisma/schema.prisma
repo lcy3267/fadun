@@ -69,6 +69,11 @@ model Evidence {
   id         Int      @id @default(autoincrement())
   caseId     Int
   case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sourceType String   @default("upload") // upload | public_fetch
+  sourceSite String?  // tianyancha | wenshu | search
+  sourceUrl  String?
+  fetchMeta  String?  // JSON string
+  reviewStatus String @default("none") // none | pending_review | approved | rejected
   filename   String
   filepath   String   // server path relative to uploads/
   ext        String   @default("")

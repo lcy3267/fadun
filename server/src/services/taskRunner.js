@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url'
 import { parseToText } from './fileParser.js'
 import { analyzeEvidenceImages, analyzeEvidenceTexts } from './ai.js'
 import { buildEvidenceIndexForCase } from './rag/evidenceIndex.js'
+import { runPublicEvidenceAgent } from './publicEvidence/agentService.js'
+import { PUBLIC_AGENT_TASK_TYPE } from './publicEvidence/contract.js'
 import { buildAgentRunner } from '../agent/runner.js'
 import { generateCaseChatReply } from '../agent/chatService.js'
 
@@ -454,6 +456,32 @@ export function buildTaskRunner(app) {
     }
   }
 
+  async function runCasePublicAgentTask(task) {
+    const payload = safeParseJson(task.payload, {})
+    const caseId = Number(payload?.caseId || task.caseId || 0)
+    if (!caseId) throw new Error('caseId required')
+
+    await patchTask(task.id, { status: 'running', progress: 1 })
+    const result = await runPublicEvidenceAgent({
+      app,
+      userId: task.userId,
+      caseId,
+      payload,
+      onProgress: async (phase, progress, extra) => {
+        await patchTask(task.id, { progress: Math.max(1, Math.min(99, Number(progress || 1))) })
+        await publish(task.id, { type: 'item_done', step: phase, ...(extra || {}) })
+      },
+    })
+
+    await patchTask(task.id, {
+      status: 'succeeded',
+      progress: 100,
+      result: JSON.stringify(result || {}),
+      error: null,
+    })
+    await publish(task.id, { type: 'all_done' })
+  }
+
   function enqueue(task) {
     return limit(async () => {
       try {
@@ -462,6 +490,7 @@ export function buildTaskRunner(app) {
         if (task.type === 'evidence_rag_index') return await runEvidenceRagIndexTask(task)
         if (task.type === 'case_agent_run') return await runCaseAgentTask(task)
         if (task.type === 'case_agent_chat') return await runCaseChatTask(task)
+        if (task.type === PUBLIC_AGENT_TASK_TYPE) return await runCasePublicAgentTask(task)
         throw new Error(`未知任务类型: ${task.type}`)
       } catch (err) {
         await app.db.task.update({

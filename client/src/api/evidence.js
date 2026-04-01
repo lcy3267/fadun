@@ -16,6 +16,15 @@ export const deleteEvidence = (id) => api.delete(`/evidence/${id}`)
 export const verifyEvidence = (evidenceIds) =>
   api.post('/evidence/verify', { evidenceIds })
 
+export const publicFetchEvidence = (payload) =>
+  api.post('/evidence/public-fetch', payload)
+
+export const confirmPublicEvidence = (evidenceIds) =>
+  api.post('/evidence/public-confirm', { evidenceIds })
+
+export const rejectPublicEvidence = (evidenceIds) =>
+  api.post('/evidence/public-reject', { evidenceIds })
+
 export const getTask = (taskId) => api.get(`/tasks/${taskId}`)
 
 export const downloadEvidenceZip = async (caseId) => {

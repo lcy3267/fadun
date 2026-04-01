@@ -6,6 +6,12 @@ import { join, dirname, basename, sep } from 'path'
 import { createHash } from 'crypto'
 import archiver from 'archiver'
 import { fileURLToPath }   from 'url'
+import {
+  PUBLIC_AGENT_TASK_TYPE,
+  PUBLIC_REVIEW_STATUS,
+  PUBLIC_SOURCE_TYPE,
+  normalizePublicFetchPayload,
+} from '../services/publicEvidence/contract.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const UPLOADS_ROOT = join(__dirname, '../../uploads')
@@ -138,6 +144,11 @@ export default async function evidenceRoutes(app) {
       created.push(await app.db.evidence.create({
         data: {
           caseId,
+          sourceType: PUBLIC_SOURCE_TYPE.UPLOAD,
+          sourceSite: null,
+          sourceUrl: null,
+          fetchMeta: null,
+          reviewStatus: PUBLIC_REVIEW_STATUS.NONE,
           filename: originalName,
           filepath: relativePath,
           ext,
@@ -234,6 +245,129 @@ export default async function evidenceRoutes(app) {
     app.taskRunner.enqueue(task).catch(() => {})
 
     return { taskId: task.id }
+  })
+
+  // ── POST /api/evidence/public-fetch ──────────────
+  // 提交公开证据抓取任务（候选结果需人工确认）
+  app.post('/public-fetch', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['caseId', 'subject'],
+        properties: {
+          caseId: { type: 'number' },
+          targets: { type: 'array', items: { type: 'string' } },
+          limit: { type: 'number' },
+          subject: {
+            type: 'object',
+            required: ['companyName'],
+            properties: {
+              companyName: { type: 'string' },
+              uscc: { type: 'string' },
+              keywords: { type: 'array', items: { type: 'string' } },
+              region: { type: 'string' },
+              from: { type: 'string' },
+              to: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const payload = normalizePublicFetchPayload(req.body || {})
+    if (!payload.caseId) return reply.code(400).send({ error: '缺少 caseId' })
+    if (!payload.subject?.companyName) return reply.code(400).send({ error: '缺少企业名称' })
+
+    const c = await app.db.case.findFirst({ where: { id: payload.caseId, userId: req.user.userId } })
+    if (!c) return reply.code(404).send({ error: '案件不存在' })
+
+    const task = await app.db.task.create({
+      data: {
+        userId: req.user.userId,
+        caseId: payload.caseId,
+        type: PUBLIC_AGENT_TASK_TYPE,
+        status: 'queued',
+        progress: 0,
+        payload: JSON.stringify(payload),
+      },
+    })
+    app.taskRunner.enqueue(task).catch(() => {})
+    return { taskId: task.id }
+  })
+
+  // ── POST /api/evidence/public-confirm ────────────
+  app.post('/public-confirm', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['evidenceIds'],
+        properties: { evidenceIds: { type: 'array', items: { type: 'integer' } } },
+      },
+    },
+  }, async (req, reply) => {
+    const ids = [...new Set((req.body?.evidenceIds || []).map(Number).filter(Boolean))]
+    if (!ids.length) return reply.code(400).send({ error: '请选择候选证据' })
+
+    const rows = await app.db.evidence.findMany({
+      where: { id: { in: ids } },
+      include: { case: { select: { userId: true } } },
+    })
+    if (rows.length !== ids.length) return reply.code(404).send({ error: '部分证据不存在' })
+    if (rows.some((r) => r.case?.userId !== req.user.userId)) return reply.code(403).send({ error: '无权限' })
+    const caseId = rows[0]?.caseId
+    if (rows.some((r) => r.caseId !== caseId)) return reply.code(400).send({ error: '证据需属于同一案件' })
+
+    await app.db.evidence.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        reviewStatus: PUBLIC_REVIEW_STATUS.APPROVED,
+        status: 'valid',
+        aiVerified: true,
+      },
+    })
+
+    const ragTask = await app.db.task.create({
+      data: {
+        userId: req.user.userId,
+        caseId,
+        type: 'evidence_rag_index',
+        status: 'queued',
+        progress: 0,
+        payload: JSON.stringify({ caseId }),
+      },
+    })
+    app.taskRunner.enqueue(ragTask).catch(() => {})
+    return { ok: true, updated: ids.length, ragTaskId: ragTask.id }
+  })
+
+  // ── POST /api/evidence/public-reject ─────────────
+  app.post('/public-reject', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['evidenceIds'],
+        properties: { evidenceIds: { type: 'array', items: { type: 'integer' } } },
+      },
+    },
+  }, async (req, reply) => {
+    const ids = [...new Set((req.body?.evidenceIds || []).map(Number).filter(Boolean))]
+    if (!ids.length) return reply.code(400).send({ error: '请选择候选证据' })
+    const rows = await app.db.evidence.findMany({
+      where: { id: { in: ids } },
+      include: { case: { select: { userId: true } } },
+    })
+    if (rows.length !== ids.length) return reply.code(404).send({ error: '部分证据不存在' })
+    if (rows.some((r) => r.case?.userId !== req.user.userId)) return reply.code(403).send({ error: '无权限' })
+
+    await app.db.evidence.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        reviewStatus: PUBLIC_REVIEW_STATUS.REJECTED,
+        status: 'invalid',
+        aiVerified: true,
+      },
+    })
+    return { ok: true, updated: ids.length }
   })
 
   // ── DELETE /api/evidence/:id ─────────────────────
