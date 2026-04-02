@@ -251,14 +251,102 @@ ${textBlocks}
   return normalizeEvidenceResults(parsed, texts.length, { textJsonFallback: true })
 }
 
+const DOC_TEMPLATES_BY_TYPE = {
+  '网络侵权': {
+    title: '网络侵权维权陈述书',
+    sections: [
+      { title: '基本情况', hint: '交代原被告信息、案件类型、维权目的、核心时间线；措辞正式。' },
+      { title: '网络侵权事实', hint: '围绕删帖/屏蔽/停止侵害的争议点，叙述侵权发生过程、传播方式与造成影响。' },
+      { title: '证据材料摘要', hint: '将已认证有效证据按要点串联，说明各证据与侵权事实的对应关系。' },
+      { title: '维权诉求', hint: '根据维权目的 goal 写明请求事项（如道歉、删除/断链、赔偿等），并体现“有据可依”。' },
+      { title: '建议行动路径', hint: '给出分步骤建议：补证/取证、平台沟通或发函、协商调解、起诉/仲裁准备。' },
+    ],
+  },
+  '劳动纠纷': {
+    title: '劳动纠纷维权陈述书',
+    sections: [
+      { title: '基本情况', hint: '说明劳动者与用人单位信息、维权目的、关键事实概览与时间范围。' },
+      { title: '劳动关系与工资福利事实', hint: '陈述用工形式、工作内容、劳动关系建立与解除经过，以及工资/社保/加班等争议点。' },
+      { title: '证据材料摘要', hint: '把工资支付、考勤/工时、劳动合同/聊天记录等证据要点串联，强调证明力。' },
+      { title: '维权诉求', hint: '根据 goal 输出请求事项：追索工资/补偿/经济补偿/赔偿等（如适用）。' },
+      { title: '建议行动路径', hint: '按劳动仲裁流程给步骤：准备材料、申请仲裁、举证安排、和解/撤回评估。' },
+    ],
+  },
+  '消费维权': {
+    title: '消费维权陈述书',
+    sections: [
+      { title: '基本情况', hint: '说明原被告信息、交易时间地点、争议商品/服务、维权目的。' },
+      { title: '消费交易与争议事实', hint: '描述购买/服务经过、出现的问题、沟通协商情况、对方回应与关键节点。' },
+      { title: '证据材料摘要', hint: '归纳发票/订单、聊天记录、检测报告/照片等与质量或违约事实的对应关系。' },
+      { title: '维权诉求', hint: '根据 goal 写明请求事项（如退货退款、赔偿、修理更换、解除合同等）。' },
+      { title: '建议行动路径', hint: '给出分步骤：保全证据、投诉平台/监管协同、协商或调解、必要时诉讼。' },
+    ],
+  },
+  '合同纠纷': {
+    title: '合同纠纷维权陈述书',
+    sections: [
+      { title: '基本情况', hint: '说明合同主体、签约与履行概览、维权目的与争议焦点。' },
+      { title: '合同履行与违约事实', hint: '围绕“违约发生—通知—对方抗辩—损失结果”叙述，写清关键节点与违约条款。' },
+      { title: '证据材料摘要', hint: '把合同文本、付款/交付凭证、沟通记录等证据要点化，并对应证明违约与损失。' },
+      { title: '维权诉求', hint: '根据 goal 输出请求：继续履行、解除合同、赔偿损失/违约金等（如适用）。' },
+      { title: '建议行动路径', hint: '给步骤：催告/函件、证据补强、调解谈判、起诉方案与管辖准备。' },
+    ],
+  },
+  '婚姻家庭': {
+    title: '婚姻家庭维权陈述书',
+    sections: [
+      { title: '基本情况', hint: '说明婚姻/同居基础、当事人基本信息、维权目的与核心争议范围。' },
+      { title: '婚姻关系与财产/抚养争议事实', hint: '围绕夫妻共同财产、债务、抚养权或探望安排等，叙述关键事实与时间线。' },
+      { title: '证据材料摘要', hint: '概括婚姻关系证明、财产来源与去向、子女相关证据，以及对方态度与影响。' },
+      { title: '维权诉求', hint: '根据 goal 写明请求事项（如分割财产、抚养费、抚养权、探望权等）。' },
+      { title: '建议行动路径', hint: '给步骤：证据保全、沟通协商/调解、诉讼准备与风险提示（如举证期限）。' },
+    ],
+  },
+  '人身损害': {
+    title: '人身损害维权陈述书',
+    sections: [
+      { title: '基本情况', hint: '说明原被告信息、受害经过概览、维权目的、伤情时间范围。' },
+      { title: '人身损害经过与责任争议', hint: '叙述事故/侵害发生原因、现场情况、伤情变化、责任主体与争议点。' },
+      { title: '证据材料摘要', hint: '归纳诊疗记录、费用票据、鉴定结论（如有）、伤情照片与证人/聊天等证据要点。' },
+      { title: '维权诉求', hint: '根据 goal 写明赔偿请求：医疗费、误工费、护理费、残疾赔偿等（按实际）。' },
+      { title: '建议行动路径', hint: '给步骤：保全证据、治疗与病历管理、伤残/鉴定准备、协商/起诉材料清单。' },
+    ],
+  },
+  '其他': {
+    title: '维权陈述书',
+    sections: [
+      { title: '基本情况', hint: '说明原被告信息、案件类型、维权目的、争议焦点概览。' },
+      { title: '案情事实', hint: '围绕争议焦点叙述发生过程、关键时间节点与对方行为/不作为。' },
+      { title: '证据材料摘要', hint: '串联已认证有效证据与争议事实的对应关系，指出能证明什么。' },
+      { title: '维权诉求', hint: '结合 goal 写明请求事项，做到请求与事实/证据相互对应。' },
+      { title: '建议行动路径', hint: '给出分步骤建议：补证/举证计划、协商调解、起诉/应对策略。' },
+    ],
+  },
+}
+
+function getDocTemplate(type) {
+  return DOC_TEMPLATES_BY_TYPE[type] || DOC_TEMPLATES_BY_TYPE['其他']
+}
+
 // ── 4. 生成维权文书 ─────────────────────────────────
 export async function generateDocument({ caseData, evidenceList }) {
   const { type, goal, desc, plaintiff, defendant } = caseData
+  const template = getDocTemplate(type)
   const evSummary = evidenceList.length
     ? evidenceList.map((e, i) => `第${i + 1}份（${e.evType}）：${e.verdict}`).join('；')
     : '暂无有效证据，按案情模板生成文书框架'
 
-  const prompt = `你是一位专业的中国民事诉讼律师，请根据以下信息起草一份正式的维权陈述书。
+  const sectionTitles = template.sections.map(s => s.title)
+  const sectionsSkeletonText = template.sections
+    .map((s, idx) =>
+      `    { "title": "${s.title}", "content": "..." }${idx === template.sections.length - 1 ? '' : ','}`
+    )
+    .join('\n')
+  const sectionSpecText = template.sections
+    .map((s, i) => `${i + 1}. ${s.title}（至少 80 字）：${s.hint}`)
+    .join('\n')
+
+  const prompt = `你是一位专业的中国民事诉讼律师，请根据以下信息起草一份正式的维权文书。
 
 【当事人信息】
 原告：${plaintiff.name}，${plaintiff.gender === 'female' ? '女' : '男'}，${plaintiff.age}岁，${plaintiff.region}
@@ -273,19 +361,23 @@ export async function generateDocument({ caseData, evidenceList }) {
 ${evSummary}
 
 【任务】
-请生成一份结构完整、语言严谨的维权陈述书，只返回如下 JSON，，禁止返回推理过程, 不要有任何其他文字：
+请生成一份结构完整、语言严谨的维权文书；只返回如下 JSON，不要有任何其他文字；禁止返回推理过程：
+
 {
-  "title": "维权陈述书",
+  "title": "${template.title}",
   "sections": [
-    { "title": "基本情况", "content": "..." },
-    { "title": "侵权事实", "content": "..." },
-    { "title": "证据材料", "content": "..." },
-    { "title": "维权诉求", "content": "..." },
-    { "title": "建议行动路径", "content": "..." }
+${sectionsSkeletonText}
   ]
 }
 
-要求：语言正式，每个 section content 不少于 80 字；建议行动路径给出分步骤的具体建议。`
+模板约束：
+1) "title" 必须严格等于模板标题：${template.title}
+2) sections 数组长度必须等于 ${template.sections.length}，且 sections[i].title 必须严格等于以下标题并保持顺序不变：${sectionTitles.join('、')}
+3) 每个 sections[i].content 至少 80 字，语言正式
+4) 具有标题为“建议行动路径”的 sections 时，必须给出分步骤具体建议（至少 3 步）
+
+分段写作要求（仅用于理解模块含义，不要求原样输出）：
+${sectionSpecText}`
 
   const text = await llmChat(prompt, { maxTokens: 2000 })
   return parseJsonLoose(text)
