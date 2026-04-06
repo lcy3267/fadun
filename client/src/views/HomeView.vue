@@ -101,7 +101,7 @@
     <!-- Footer -->
     <div class="hfooter">
       <div class="hfooter-l">© 2026 法盾 · AI法律援助平台 · 本平台提供法律信息参考，正式法律行动请咨询持证律师</div>
-      <div class="hfooter-r">粤ICP备XXXXXXXX号</div>
+      <div class="hfooter-r">湘ICP备2026010900号-1</div>
     </div>
 
     <LoginModal    v-model="showLogin"    @switch="showLogin=false;showRegister=true" />
