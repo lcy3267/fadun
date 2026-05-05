@@ -1,7 +1,7 @@
 # Dependencies & build
 node_modules/
-dist/
-client/dist/
+# dist/
+# client/dist/
 
 # Secrets & local env
 .env
